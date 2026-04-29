@@ -1,0 +1,22 @@
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor temp files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.claude/
+
+# Large media — commit only if small; otherwise host externally (Hugging Face, etc.)
+# Uncomment the lines below to exclude video files from git:
+# docs/media/*.mp4
+# docs/media/*.MP4
+# docs/static/videos/*.mp4
+
+# Python dev server
+__pycache__/
+*.pyc
