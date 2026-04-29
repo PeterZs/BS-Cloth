@@ -137,11 +137,49 @@
     }
     .comparison-table .cell-video {
       width: 100%;
-      max-width: 220px;
       display: block;
-      margin: 0 auto;
-      border-radius: 8px;
       background: #000;
+      cursor: pointer;   /* hints click-to-replay (handler in JS) */
+    }
+    /* Wraps the cell video so per-cell `transform: scale(...)` clips inside the
+       wrap rather than spilling into neighboring cells. To bump or shrink one
+       video, set its `scale` field in the fbwTests data — see the comment block
+       just above the fbwTests definition in the script at the bottom. */
+    .cell-video-wrap {
+      overflow: hidden;
+      border-radius: 8px;
+      max-width: 220px;
+      margin: 0 auto;
+      background: #000;
+    }
+    .cell-res-label {
+      display: block;
+      font-family: "Quicksand", "Noto Sans", sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #4a5568;
+      margin-bottom: 0.35rem;
+    }
+    .cell-empty {
+      color: #c0c8d6;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    /* Stack the three FBW sub-tables with breathing room between them */
+    .fbw-subtable {
+      margin-bottom: 2.5rem;
+    }
+    .fbw-subtable:last-child { margin-bottom: 0; }
+    .fbw-subtable h3 {
+      font-family: 'Google Sans', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .fbw-subtable .fbw-desc {
+      color: #555;
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
     }
 
     /* Stress-test horizontal scroll-snap carousel (barrier-free style) */
@@ -180,7 +218,7 @@
       display: block;
       margin: 0 auto;
       width: 100%;
-      max-width: 1920px;     /* widen / narrow the video here */
+      max-width: 1152px;     /* widen / narrow the video here */
       max-height: 60vh;     /* cap height so tall scenes don't overflow */
       border-radius: 12px;
       background: #000;
@@ -341,7 +379,7 @@
 </section>
 
 <section class="hero teaser">
-  <div class="container is-max-desktop">
+  <div class="container is-max-widescreen">
     <div class="hero-body">
       <img src="./static/images/teaser.png" alt="Cloth basket teaser: four garments are launched toward a basket with fixed corners, collide, and accumulate inside" class="teaser-image">
       <h2 class="subtitle has-text-centered">
@@ -393,25 +431,15 @@
     <div class="columns is-centered">
       <div class="column is-full-width">
         <h2 class="title is-3 has-text-centered">Comparisons on Square Cloth</h2>
-        <p class="has-text-centered" style="margin-bottom: 0.5rem;">
+        <p class="has-text-centered" style="margin-bottom: 1.5rem;">
           Per-method side-by-side playback on three benchmark tests — upright hanging, drape, and shear — against
           linear FEM, SFEM&nbsp;[Liang&nbsp;et&nbsp;al.&nbsp;2023] and BHEM&nbsp;[Ni&nbsp;et&nbsp;al.&nbsp;2024].
-          Posters show the still results from the paper until the videos are dropped in.
+          Each row pairs runs of <em>comparable visual quality</em>, following the pairing in the paper's
+          evaluation table. A dash (—) marks resolutions a method does not include for that test.
         </p>
-        <div class="comparison-table-wrapper">
-          <table class="comparison-table">
-            <thead>
-              <tr>
-                <th>Test</th>
-                <th>B-spline FEM (Ours)</th>
-                <th>Linear FEM</th>
-                <th>SFEM</th>
-                <th>BHEM</th>
-              </tr>
-            </thead>
-            <tbody id="comparison-table-body"></tbody>
-          </table>
-        </div>
+
+        <!-- Three FBW sub-tables (FBW1 / FBW2 / FBW3) are rendered into here by JS at the bottom of the page. -->
+        <div id="fbw-tables-host"></div>
       </div>
     </div>
   </div>
@@ -501,19 +529,91 @@
 
 <script>
   // ─── Square-cloth comparison videos ──────────────────────────────────────
-  // Per-method side-by-side videos. Drop mp4s at:
-  //   static/videos/comparison/<scene>_<method>.mp4
-  // until then, the per-test poster image is shown.
-  const comparisonMethods = [
+  // One sub-table per FBW test (upright hanging / drape / shear). Each row
+  // pairs runs of comparable visual quality, mirroring the paper's evaluation
+  // table. Methods without a matching resolution show a "—" placeholder.
+  //
+  // Cell schema:  null                          → empty cell ("—")
+  //               { res, file }                 → render <video> with `res` label above
+  //               { res, file, scale: 1.25 }     → as above, plus per-cell visual
+  //                                               zoom (CSS transform). Use this
+  //                                               to bump renders that have too
+  //                                               much padding around the cloth
+  //                                               so they look the same size as
+  //                                               their neighbors. The wrap's
+  //                                               overflow:hidden clips the
+  //                                               scaled video inside its cell.
+  //                                               Tweak each value individually
+  //                                               (e.g. 1.15, 1.2, 1.25) until
+  //                                               the cloths visually match.
+  // All `file` paths resolve under FBW_VIDEO_BASE.
+  const FBW_VIDEO_BASE = "./static/videos/fbw-test/";
+  const fbwMethods = [
     { key: "bspline", label: "B-spline FEM (Ours)" },
     { key: "linear",  label: "Linear FEM" },
     { key: "sfem",    label: "SFEM" },
     { key: "bhem",    label: "BHEM" }
   ];
-  const comparisonScenes = [
-    { slug: "upright_hanging", label: "Upright Hanging Cloth", poster: "./static/images/upright_hanging.png" },
-    { slug: "drape",           label: "Drape Test",            poster: "./static/images/drape_test.png"     },
-    { slug: "shear",           label: "Shear Test",            poster: "./static/images/shear_test.png"     }
+  const fbwTests = [
+    {
+      id: "fbw1",
+      title: "FBW1 — Upright Hanging Cloth",
+      desc:  "Top corners pinned and brought together at 0.5 m/s for 0.1 s, then settling under gravity. As resolution increases, wrinkles evolve from three layers to four.",
+      // ── FBW1 visual-scale tweaks ─────────────────────────────────────────
+      // BSFEM and Linear renders for FBW1 came out with extra empty padding
+      // around the cloth, so they look smaller than the SFEM/BHEM cells. The
+      // `scale: 1.25` field zooms each video by 25% via CSS transform; the
+      // wrap's overflow:hidden clips the empty frame back to the original
+      // cell size. Tune each number below until the cloths visually match.
+      rows: [
+        { bspline: { res: "75×75",   file: "fbw1_bs75.mp4",      scale: 1.25 },
+          linear:  { res: "115×115", file: "fbw1_linear115.mp4", scale: 1.25 },
+          sfem:    null,
+          bhem:    null },
+        { bspline: { res: "100×100", file: "fbw1_bs100.mp4",     scale: 1.25 },
+          linear:  { res: "175×175", file: "fbw1_linear175.mp4", scale: 1.25 },
+          sfem:    null,
+          bhem:    null },
+        { bspline: { res: "125×125", file: "fbw1_bs125.mp4",     scale: 1.25 },
+          linear:  { res: "200×200", file: "fbw1_linear200.mp4", scale: 1.25 },
+          sfem:    { res: "125×125", file: "FBW1_SFEM125.mp4"   },
+          bhem:    { res: "25×25",   file: "FBW1_BHEM25.mp4"    } }
+      ]
+    },
+    {
+      id: "fbw2",
+      title: "FBW2 — Drape Test",
+      desc:  "Cloth laid flat with two adjacent edges fixed; swings and drapes under gravity until equilibrium.",
+      rows: [
+        { bspline: { res: "100×100", file: "fbw2_bs100.mp4"            },
+          linear:  { res: "150×150", file: "fbw2_linear150.mp4"        },
+          sfem:    null,
+          bhem:    { res: "25×25",   file: "FBW2_BHEM25.mp4"           } },
+        { bspline: { res: "125×125", file: "fbw2_bs125.mp4"            },
+          linear:  { res: "175×175", file: "fbw2_linear175.mp4"        },
+          sfem:    { res: "125×125", file: "FBW2_SFEM125.mp4"          },
+          bhem:    { res: "35×35",   file: "FBW2_BHEM35.mp4"           } }
+      ]
+    },
+    {
+      id: "fbw3",
+      title: "FBW3 — Shear Test",
+      desc:  "Cloth laid flat, opposite edges pulled in shearing directions at 0.5 m/s for 0.1 s with shearing stiffness equal to stretching stiffness — produces sharp shearing wrinkles.",
+      rows: [
+        { bspline: { res: "100×100", file: "FBW3_BS100.mp4"     },
+          linear:  { res: "125×125", file: "FBW3_Linear125.mp4" },
+          sfem:    null,
+          bhem:    null },
+        { bspline: { res: "125×125", file: "FBW3_BS125.mp4"     },
+          linear:  { res: "150×150", file: "FBW3_Linear150.mp4" },
+          sfem:    null,
+          bhem:    { res: "25×25",   file: "FBW3_BHEM25.mp4"    } },
+        { bspline: { res: "140×140", file: "FBW3_BS140.mp4"     },
+          linear:  null,
+          sfem:    { res: "125×125", file: "FBW3_SFEM125.mp4"   },
+          bhem:    { res: "35×35",   file: "FBW3_BHEM35.mp4"    } }
+      ]
+    }
   ];
 
   // ─── Stress test scenes ──────────────────────────────────────────────────
@@ -527,7 +627,7 @@
         "counterclockwise — inducing intricate frictional wrinkles. 200×200 B-spline surface with a 300×300 linear " +
         "contact mesh; IPC handles dense friction.",
       image: "./static/images/cloth_rotating_sphere.png",
-      video: "./static/videos/rotating-sphere.mp4"
+      video: "./static/videos/stress-test/rotating-sphere.mp4"
     },
     {
       title: "Helicopter — Front View",
@@ -536,7 +636,7 @@
         "+ 200×200 contact mesh). The rotor and back propeller act as moving boundaries that fold the sheet around " +
         "the helicopter geometry.",
       image: "./static/images/helicopter.png",
-      video: "./static/videos/helicopter-front.mp4"
+      video: "./static/videos/stress-test/helicopter-front.mp4"
     },
     {
       title: "Helicopter — Back View",
@@ -544,7 +644,7 @@
         "Same helicopter scene from the back, showing how the back rotor rolls and stretches the cloth as the sheet " +
         "comes to rest against the airframe.",
       image: "./static/images/helicopter.png",
-      video: "./static/videos/helicopter-back.mp4"
+      video: "./static/videos/stress-test/helicopter-back.mp4"
     },
     {
       title: "Stripes Sweeping over Armadillo",
@@ -553,7 +653,7 @@
         "an armadillo model as the rack moves back and forth, bending under contact and twisting against each other. " +
         "C¹-continuity captures complex curvature and twist along the short edge with only 10 control points.",
       image: "./static/images/brush_armadillo.png",
-      video: "./static/videos/stripes_armadillo_v2.mp4"
+      video: "./static/videos/stress-test/stripes_armadillo_v2.mp4"
     },
     {
       title: "Garment on Character — Shuffling",
@@ -561,7 +661,7 @@
         "Character animation (a): a running motion in a long floral dress. 95K B-spline DOF on non-rectangular " +
         "garment patches generated by our mesh-conforming pipeline; smooth fabric swing under large-amplitude motion.",
       image: "./static/images/character_garment.png",
-      video: "./static/videos/shuffling-v4-60.mp4"
+      video: "./static/videos/stress-test/shuffling-v4-60.mp4"
     },
     {
       title: "Garment on Character — Hiphop Dance",
@@ -569,7 +669,7 @@
         "Character animation (b): arm raises and rotations in a fitted T-shirt and shorts. 65K B-spline DOF; " +
         "deformation around the shoulders, elbows, and torso under dense contact with the body.",
       image: "./static/images/character_garment.png",
-      video: "./static/videos/hiphop-v2.mp4"
+      video: "./static/videos/stress-test/hiphop-v2.mp4"
     },
     {
       title: "Garment on Character — Skirt Swirl",
@@ -577,7 +677,7 @@
         "Character animation (c): twisting and side-stepping in a fitted top and a vertically-segmented skirt. " +
         "124K B-spline DOF; lateral sway and rotational folds in the fabric, with stable contact across patch seams.",
       image: "./static/images/character_garment.png",
-      video: "./static/videos/dancing-v1.mp4"
+      video: "./static/videos/stress-test/dancing-v1.mp4"
     },
     {
       title: "Cloth Basket — Front View",
@@ -586,7 +686,7 @@
         "basket faces (also modeled as B-spline surfaces). 152K control-point garments + 191K contact mesh; IPC " +
         "integration handles dynamic self-contact throughout.",
       image: "./static/images/cloth_basket.png",
-      video: "./static/videos/cloth_basket_front_v2.mp4"
+      video: "./static/videos/stress-test/cloth_basket_front_v2.mp4"
     },
     {
       title: "Cloth Basket — Top View",
@@ -594,24 +694,50 @@
         "Same cloth-basket scene from above, showing the in-plane folding pattern as garments accumulate inside the " +
         "basket and fabric layers fold against each other.",
       image: "./static/images/cloth_basket.png",
-      video: "./static/videos/cloth_basket_top_v2.mp4"
+      video: "./static/videos/stress-test/cloth_basket_top_v2.mp4"
     }
   ];
 
   // ─── Rendering helpers ───────────────────────────────────────────────────
-  function buildComparisonCell(scene, method) {
-    const src = `./static/videos/comparison/${scene.slug}_${method.key}.mp4`;
+  function buildFbwCell(cell) {
+    if (!cell) return `<td><span class="cell-empty">—</span></td>`;
+    const src = FBW_VIDEO_BASE + cell.file;
+    // `scale` (optional, see comment above fbwTests) applies a CSS transform so
+    // a render with extra padding visually matches its neighbors. The wrap's
+    // overflow:hidden clips the spillover back to the original cell width.
+    const scaleStyle = cell.scale
+      ? ` style="transform: scale(${cell.scale}); transform-origin: center;"`
+      : "";
     return `
       <td>
-        <video class="cell-video" muted playsinline preload="metadata" controls poster="${scene.poster}">
-          <source src="${src}" type="video/mp4">
-        </video>
+        <span class="cell-res-label">${cell.res}</span>
+        <div class="cell-video-wrap">
+          <video class="cell-video" muted autoplay playsinline preload="metadata"${scaleStyle}>
+            <source src="${src}" type="video/mp4">
+          </video>
+        </div>
       </td>
     `;
   }
-  function buildComparisonRow(scene) {
-    const cells = comparisonMethods.map((m) => buildComparisonCell(scene, m)).join("");
-    return `<tr><td class="comparison-prompt">${scene.label}</td>${cells}</tr>`;
+  function buildFbwRow(row) {
+    const cells = fbwMethods.map((m) => buildFbwCell(row[m.key])).join("");
+    return `<tr>${cells}</tr>`;
+  }
+  function buildFbwSubtable(test) {
+    const headers = fbwMethods.map((m) => `<th>${m.label}</th>`).join("");
+    const body    = test.rows.map(buildFbwRow).join("");
+    return `
+      <div class="fbw-subtable" id="${test.id}">
+        <h3>${test.title}</h3>
+        <p class="fbw-desc">${test.desc}</p>
+        <div class="comparison-table-wrapper">
+          <table class="comparison-table">
+            <thead><tr>${headers}</tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
   }
 
   function buildStressCard(scene) {
@@ -629,7 +755,18 @@
     `;
   }
 
-  document.getElementById("comparison-table-body").innerHTML = comparisonScenes.map(buildComparisonRow).join("");
+  document.getElementById("fbw-tables-host").innerHTML = fbwTests.map(buildFbwSubtable).join("");
+
+  // Click any cell video to rewind & replay. Without this, once a cell finishes
+  // playing it freezes on its last frame with no way to rewatch (we removed the
+  // native `controls` bar so it stays clean after end).
+  document.querySelectorAll(".comparison-table .cell-video").forEach((v) => {
+    v.addEventListener("click", () => {
+      v.currentTime = 0;
+      v.play().catch(() => { /* ignored — autoplay blocked or detached */ });
+    });
+  });
+
   const stressTrack = document.getElementById("stress-track");
   stressTrack.innerHTML = stressScenes.map(buildStressCard).join("");
 
