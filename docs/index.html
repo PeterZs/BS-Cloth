@@ -144,13 +144,17 @@
     /* Wraps the cell video so per-cell `transform: scale(...)` clips inside the
        wrap rather than spilling into neighboring cells. To bump or shrink one
        video, set its `scale` field in the fbwTests data — see the comment block
-       just above the fbwTests definition in the script at the bottom. */
+       just above the fbwTests definition in the script at the bottom.
+
+       Background is white to match the video's natural background, so when a
+       cell uses `translateY` (and the shifted video leaves a gap), the gap
+       blends into the page rather than showing as a black bar. */
     .cell-video-wrap {
       overflow: hidden;
       border-radius: 8px;
       max-width: 220px;
       margin: 0 auto;
-      background: #000;
+      background: #ffffff;
     }
     .cell-res-label {
       display: block;
@@ -158,6 +162,14 @@
       font-size: 0.85rem;
       font-weight: 600;
       color: #4a5568;
+      margin-bottom: 0.05rem;
+    }
+    .cell-time-label {
+      display: block;
+      font-family: "Quicksand", "Noto Sans", sans-serif;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #718096;
       margin-bottom: 0.35rem;
     }
     .cell-empty {
@@ -300,8 +312,8 @@
     <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
       <a class="navbar-item" href="./"><span class="icon"><i class="fas fa-home"></i></span></a>
       <a class="navbar-item" href="#abstract">Abstract</a>
+      <a class="navbar-item" href="#stress">Results</a>
       <a class="navbar-item" href="#comparison-table">Comparisons</a>
-      <a class="navbar-item" href="#stress">More Results</a>
       <a class="navbar-item" href="#video">Video</a>
       <a class="navbar-item" href="#citation">Citation</a>
     </div>
@@ -341,33 +353,33 @@
             <div class="publication-links">
               <!-- TODO: links — replace href="#" with real URLs once available -->
               <span class="link-block">
-                <a href="#" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #e8562a; border: 2px solid #e8562a;">
+                <a href="https://arxiv.org/abs/2506.18867" target="_blank" rel="noopener noreferrer" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #e8562a; border: 2px solid #e8562a;">
                   <span class="icon" style="color:#e8562a;"><i class="ai ai-arxiv"></i></span>
                   <span>arXiv</span>
                 </a>
               </span>
               <span class="link-block">
-                <a href="#" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #4378bf; border: 2px solid #4378bf;">
+                <a class="external-link button is-normal is-rounded" aria-disabled="true" title="Coming soon" style="background-color:#ffffff; color: #4378bf; border: 2px solid #4378bf; opacity: 0.55; cursor: not-allowed; pointer-events: none;">
                   <span class="icon" style="color:#4378bf;"><i class="fas fa-file-pdf"></i></span>
-                  <span>Paper</span>
+                  <span>Paper · Coming Soon</span>
                 </a>
               </span>
               <span class="link-block">
-                <a href="#" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #4378bf; border: 2px solid #4378bf;">
+                <a class="external-link button is-normal is-rounded" aria-disabled="true" title="Coming soon" style="background-color:#ffffff; color: #4378bf; border: 2px solid #4378bf; opacity: 0.55; cursor: not-allowed; pointer-events: none;">
                   <span class="icon" style="color:#4378bf;"><i class="fas fa-file-alt"></i></span>
-                  <span>Supplemental</span>
+                  <span>Supplemental · Coming Soon</span>
                 </a>
               </span>
               <span class="link-block">
-                <a href="#" class="external-link button is-normal is-rounded" style="background-color:#f5f5f5; color: #24292e; border: 2px solid #24292e;">
+                <a href="https://github.com/Simulation-Intelligence/BS-Cloth" target="_blank" rel="noopener noreferrer" class="external-link button is-normal is-rounded" style="background-color:#f5f5f5; color: #24292e; border: 2px solid #24292e;">
                   <span class="icon" style="color:#24292e;"><i class="fab fa-github"></i></span>
                   <span>Code</span>
                 </a>
               </span>
               <span class="link-block">
-                <a href="#video" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #c0392b; border: 2px solid #c0392b;">
+                <a class="external-link button is-normal is-rounded" aria-disabled="true" title="Coming soon" style="background-color:#ffffff; color: #c0392b; border: 2px solid #c0392b; opacity: 0.55; cursor: not-allowed; pointer-events: none;">
                   <span class="icon" style="color:#c0392b;"><i class="fab fa-youtube"></i></span>
-                  <span>Video</span>
+                  <span>Video · Coming Soon</span>
                 </a>
               </span>
             </div>
@@ -383,9 +395,10 @@
     <div class="hero-body">
       <img src="./static/images/teaser.png" alt="Cloth basket teaser: four garments are launched toward a basket with fixed corners, collide, and accumulate inside" class="teaser-image">
       <h2 class="subtitle has-text-centered">
-        <strong>Cloth basket.</strong> Four garments are launched toward a B-spline basket with fixed corners,
-        collide with each other, and accumulate inside. Both the garments and the basket faces are modeled
-        as B-spline surfaces (51K control points, $\Delta t = 0.01$&nbsp;s); IPC integration handles contact throughout.
+        <strong>Cloth basket.</strong> Quadratic B-spline shape functions capture wrinkling behavior accurately
+        and efficiently, IPC integration handles dense contact robustly, and our mesh-conforming pipeline
+        supports both rectangular (basket faces) and irregular (garments) domains&nbsp;— all demonstrated in
+        a single scene.
       </h2>
     </div>
   </div>
@@ -401,7 +414,7 @@
             We present an efficient B-spline finite element method (FEM) for cloth simulation. While higher-order FEM
             has long promised higher accuracy, its adoption in cloth simulators has been limited by larger computational
             costs while generating results with similar visual quality. Our contribution is a full algorithmic pipeline
-            that makes cloth simulation using quadratic B-spline surfaces <strong>faster than standard linear FEM</strong>
+            that makes cloth simulation using quadratic B-spline surfaces faster than standard linear FEM
             in practice while consistently improving accuracy and visual fidelity.
           </p>
           <p>
@@ -414,12 +427,36 @@
           </p>
           <p>
             Together, these optimizations make high-order, smooth cloth simulation competitive at scale, yielding an
-            average <strong>2× speedup over linear FEM</strong>. Extensive experiments demonstrate improved accuracy,
+            average 2× speedup over linear FEM. Extensive experiments demonstrate improved accuracy,
             wrinkle detail, and robustness, including contact-rich scenarios, relative to linear FEM and recent
             higher-order approaches. Our method enables realistic wrinkling dynamics across a wide range of material
             parameters and supports practical garment animation, providing a new promising spatial discretization for
             high-quality cloth simulation.
           </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="stress" style="background:#f8f8f8;">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3 has-text-centered">Results</h2>
+        <div class="content has-text-justified">
+          <p>
+            We stress-test the method through scaling and contact-rich configurations on both rectangular and
+            non-rectangular meshes — fast-spinning sphere contact, oblique helicopter impact, dense stripe contact
+            on an articulated armadillo, full-character garment animation, and multi-garment piling in a B-spline
+            basket. Use the arrows to switch between scenes.
+          </p>
+        </div>
+
+        <div class="demo-carousel">
+          <button class="scroll-button" type="button" id="stress-scroll-left" aria-label="Previous stress test">&#12298;</button>
+          <div class="demo-track" id="stress-track"></div>
+          <button class="scroll-button" type="button" id="stress-scroll-right" aria-label="Next stress test">&#12299;</button>
         </div>
       </div>
     </div>
@@ -433,35 +470,18 @@
         <h2 class="title is-3 has-text-centered">Comparisons on Square Cloth</h2>
         <p class="has-text-centered" style="margin-bottom: 1.5rem;">
           Per-method side-by-side playback on three benchmark tests — upright hanging, drape, and shear — against
-          linear FEM, SFEM&nbsp;[Liang&nbsp;et&nbsp;al.&nbsp;2023] and BHEM&nbsp;[Ni&nbsp;et&nbsp;al.&nbsp;2024].
-          Each row pairs runs of <em>comparable visual quality</em>, following the pairing in the paper's
-          evaluation table. A dash (—) marks resolutions a method does not include for that test.
+          linear FEM,
+          <a href="https://leqiqin.github.io/publication/fem2023" target="_blank" rel="noopener noreferrer">SFEM&nbsp;[Liang&nbsp;et&nbsp;al.&nbsp;2023]</a>
+          and
+          <a href="https://starryuniv.cn/files/spm24shells.pdf" target="_blank" rel="noopener noreferrer">BHEM&nbsp;[Ni&nbsp;et&nbsp;al.&nbsp;2024]</a>.
+          Each row pairs runs of comparable visual quality, following the pairing in the paper's
+          evaluation table. A dash (—) marks resolutions a method does not include for that test. Runtimes
+          are per-timestep wall-clock averages (Δ<i>t</i>&nbsp;=&nbsp;0.01&nbsp;s) on a 12th-Gen Intel Core
+          i7-12700F. Click any video to replay it.
         </p>
 
         <!-- Three FBW sub-tables (FBW1 / FBW2 / FBW3) are rendered into here by JS at the bottom of the page. -->
         <div id="fbw-tables-host"></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="stress" style="background:#f8f8f8;">
-  <div class="container is-max-desktop">
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">More Results</h2>
-        <div class="content has-text-justified">
-          <p>
-            Beyond comparisons we stress-test the method through scaling and contact-rich configurations on both
-            rectangular and non-rectangular meshes. Use the arrows to switch between scenes.
-          </p>
-        </div>
-
-        <div class="demo-carousel">
-          <button class="scroll-button" type="button" id="stress-scroll-left" aria-label="Previous stress test">&#12298;</button>
-          <div class="demo-track" id="stress-track"></div>
-          <button class="scroll-button" type="button" id="stress-scroll-right" aria-label="Next stress test">&#12299;</button>
-        </div>
       </div>
     </div>
   </div>
@@ -533,20 +553,23 @@
   // pairs runs of comparable visual quality, mirroring the paper's evaluation
   // table. Methods without a matching resolution show a "—" placeholder.
   //
-  // Cell schema:  null                          → empty cell ("—")
-  //               { res, file }                 → render <video> with `res` label above
-  //               { res, file, scale: 1.25 }     → as above, plus per-cell visual
-  //                                               zoom (CSS transform). Use this
-  //                                               to bump renders that have too
-  //                                               much padding around the cloth
-  //                                               so they look the same size as
-  //                                               their neighbors. The wrap's
-  //                                               overflow:hidden clips the
-  //                                               scaled video inside its cell.
-  //                                               Tweak each value individually
-  //                                               (e.g. 1.15, 1.2, 1.25) until
-  //                                               the cloths visually match.
-  // All `file` paths resolve under FBW_VIDEO_BASE.
+  // Cell schema:  null                                              → empty cell ("—")
+  //               { res, file, time, scale? }                        → render <video> with
+  //                                                                     `res` line and `time` line above.
+  // Fields:
+  //   res    "75×75" etc — knot-grid resolution shown as the primary label.
+  //   file   mp4 path under FBW_VIDEO_BASE.
+  //   time   per-timestep wall-clock runtime, e.g. "1.43 s/step". Pulled from
+  //          Table 1 of the paper (`evaluation_statistics`); displayed as a
+  //          dimmer second line under `res`.
+  //   scale       optional CSS transform zoom (e.g. 1.25) — bumps renders whose
+  //               cloth has extra empty padding so they visually match neighbors.
+  //               The wrap's overflow:hidden clips the scaled video back to the
+  //               original cell size. Tweak values individually until cloths match.
+  //   translateY  optional CSS percentage (e.g. "-8%") to nudge a single render
+  //               vertically when the cloth is off-center in the frame. Negative
+  //               moves the video up, positive moves it down. Composed with
+  //               `scale` if both are set.
   const FBW_VIDEO_BASE = "./static/videos/fbw-test/";
   const fbwMethods = [
     { key: "bspline", label: "B-spline FEM (Ours)" },
@@ -565,19 +588,20 @@
       // `scale: 1.25` field zooms each video by 25% via CSS transform; the
       // wrap's overflow:hidden clips the empty frame back to the original
       // cell size. Tune each number below until the cloths visually match.
+      // Per-step runtimes from Table 1 of the paper (BHEM* = 100-iter cap).
       rows: [
-        { bspline: { res: "75×75",   file: "fbw1_bs75.mp4",      scale: 1.25 },
-          linear:  { res: "115×115", file: "fbw1_linear115.mp4", scale: 1.25 },
+        { bspline: { res: "75×75",   file: "fbw1_bs75.mp4",      time: "1.43 s/step",  scale: 1.25 },
+          linear:  { res: "115×115", file: "fbw1_linear115.mp4", time: "3.26 s/step",  scale: 1.25 },
           sfem:    null,
           bhem:    null },
-        { bspline: { res: "100×100", file: "fbw1_bs100.mp4",     scale: 1.25 },
-          linear:  { res: "175×175", file: "fbw1_linear175.mp4", scale: 1.25 },
+        { bspline: { res: "100×100", file: "fbw1_bs100.mp4",     time: "3.13 s/step",  scale: 1.25 },
+          linear:  { res: "175×175", file: "fbw1_linear175.mp4", time: "8.29 s/step",  scale: 1.25 },
           sfem:    null,
           bhem:    null },
-        { bspline: { res: "125×125", file: "fbw1_bs125.mp4",     scale: 1.25 },
-          linear:  { res: "200×200", file: "fbw1_linear200.mp4", scale: 1.25 },
-          sfem:    { res: "125×125", file: "FBW1_SFEM125.mp4"   },
-          bhem:    { res: "25×25",   file: "FBW1_BHEM25.mp4"    } }
+        { bspline: { res: "125×125", file: "fbw1_bs125.mp4",     time: "5.13 s/step",  scale: 1.25 },
+          linear:  { res: "200×200", file: "fbw1_linear200.mp4", time: "12.02 s/step", scale: 1.25 },
+          sfem:    { res: "125×125", file: "FBW1_SFEM125.mp4",   time: "27.26 s/step" },
+          bhem:    { res: "25×25",   file: "FBW1_BHEM25.mp4",    time: "116.67 s/step" } }
       ]
     },
     {
@@ -585,14 +609,14 @@
       title: "FBW2 — Drape Test",
       desc:  "Cloth laid flat with two adjacent edges fixed; swings and drapes under gravity until equilibrium.",
       rows: [
-        { bspline: { res: "100×100", file: "fbw2_bs100.mp4"            },
-          linear:  { res: "150×150", file: "fbw2_linear150.mp4"        },
+        { bspline: { res: "100×100", file: "fbw2_bs100.mp4",      time: "2.11 s/step",  translateY: "-8.33%" },
+          linear:  { res: "150×150", file: "fbw2_linear150.mp4",  time: "3.91 s/step",  scale: 1.25 },
           sfem:    null,
-          bhem:    { res: "25×25",   file: "FBW2_BHEM25.mp4"           } },
-        { bspline: { res: "125×125", file: "fbw2_bs125.mp4"            },
-          linear:  { res: "175×175", file: "fbw2_linear175.mp4"        },
-          sfem:    { res: "125×125", file: "FBW2_SFEM125.mp4"          },
-          bhem:    { res: "35×35",   file: "FBW2_BHEM35.mp4"           } }
+          bhem:    { res: "25×25",   file: "FBW2_BHEM25.mp4",     time: "13.92 s/step" } },
+        { bspline: { res: "125×125", file: "fbw2_bs125.mp4",      time: "2.92 s/step",  scale: 1.25 },
+          linear:  { res: "175×175", file: "fbw2_linear175.mp4",  time: "6.72 s/step",  scale: 1.25 },
+          sfem:    { res: "125×125", file: "FBW2_SFEM125.mp4",    time: "23.16 s/step" },
+          bhem:    { res: "35×35",   file: "FBW2_BHEM35.mp4",     time: "43.80 s/step" } }
       ]
     },
     {
@@ -600,99 +624,77 @@
       title: "FBW3 — Shear Test",
       desc:  "Cloth laid flat, opposite edges pulled in shearing directions at 0.5 m/s for 0.1 s with shearing stiffness equal to stretching stiffness — produces sharp shearing wrinkles.",
       rows: [
-        { bspline: { res: "100×100", file: "FBW3_BS100.mp4"     },
-          linear:  { res: "125×125", file: "FBW3_Linear125.mp4" },
+        { bspline: { res: "100×100", file: "FBW3_BS100.mp4",     time: "3.02 s/step"  },
+          linear:  { res: "125×125", file: "FBW3_Linear125.mp4", time: "5.82 s/step"  },
           sfem:    null,
           bhem:    null },
-        { bspline: { res: "125×125", file: "FBW3_BS125.mp4"     },
-          linear:  { res: "150×150", file: "FBW3_Linear150.mp4" },
+        { bspline: { res: "125×125", file: "FBW3_BS125.mp4",     time: "9.11 s/step"  },
+          linear:  { res: "150×150", file: "FBW3_Linear150.mp4", time: "16.78 s/step" },
           sfem:    null,
-          bhem:    { res: "25×25",   file: "FBW3_BHEM25.mp4"    } },
-        { bspline: { res: "140×140", file: "FBW3_BS140.mp4"     },
+          bhem:    { res: "25×25",   file: "FBW3_BHEM25.mp4",    time: "15.73 s/step" } },
+        { bspline: { res: "140×140", file: "FBW3_BS140.mp4",     time: "18.82 s/step" },
           linear:  null,
-          sfem:    { res: "125×125", file: "FBW3_SFEM125.mp4"   },
-          bhem:    { res: "35×35",   file: "FBW3_BHEM35.mp4"    } }
+          sfem:    { res: "125×125", file: "FBW3_SFEM125.mp4",   time: "75.95 s/step" },
+          bhem:    { res: "35×35",   file: "FBW3_BHEM35.mp4",    time: "32.91 s/step" } }
       ]
     }
   ];
 
-  // ─── Stress test scenes ──────────────────────────────────────────────────
-  // Order follows the paper's Stress Tests section (§5.4):
-  //   rotating sphere → helicopter → stripes → character animations (a/b/c) → cloth basket
+  // ─── Result scenes ───────────────────────────────────────────────────────
+  // One card per scene. Descriptions are short visual summaries — what the
+  // viewer sees, not paper-specific statistics.
   const stressScenes = [
     {
       title: "Cloth on Rotating Sphere",
-      description:
-        "A square cloth sheet falls onto a static sphere (μ=0.4, ε_v=10⁻²) and settles, then the sphere rotates " +
-        "counterclockwise — inducing intricate frictional wrinkles. 200×200 B-spline surface with a 300×300 linear " +
-        "contact mesh; IPC handles dense friction.",
+      description: "A cloth sheet drapes over a sphere; the sphere then rotates, drawing the cloth into intricate folds.",
       image: "./static/images/cloth_rotating_sphere.png",
       video: "./static/videos/stress-test/rotating-sphere.mp4"
     },
     {
       title: "Helicopter — Front View",
-      description:
-        "A 3 m × 3 m sheet falls from a 45° oblique angle onto a helicopter 1 m above the ground (200×200 B-spline " +
-        "+ 200×200 contact mesh). The rotor and back propeller act as moving boundaries that fold the sheet around " +
-        "the helicopter geometry.",
+      description: "A square cloth falls onto a helicopter and wraps around the propeller and airframe.",
       image: "./static/images/helicopter.png",
       video: "./static/videos/stress-test/helicopter-front.mp4"
     },
     {
       title: "Helicopter — Back View",
-      description:
-        "Same helicopter scene from the back, showing how the back rotor rolls and stretches the cloth as the sheet " +
-        "comes to rest against the airframe.",
+      description: "The same scene from behind, showing how the cloth folds around the rear rotor.",
       image: "./static/images/helicopter.png",
       video: "./static/videos/stress-test/helicopter-back.mp4"
     },
     {
       title: "Stripes Sweeping over Armadillo",
-      description:
-        "20 high-aspect-ratio stripes (10×150 B-spline) attached along their top edge to a moving rack sweep across " +
-        "an armadillo model as the rack moves back and forth, bending under contact and twisting against each other. " +
-        "C¹-continuity captures complex curvature and twist along the short edge with only 10 control points.",
+      description: "Long thin stripes attached to a moving rack sweep across an armadillo, bending and twisting against each other on contact.",
       image: "./static/images/brush_armadillo.png",
       video: "./static/videos/stress-test/stripes_armadillo_v2.mp4"
     },
     {
       title: "Garment on Character — Shuffling",
-      description:
-        "Character animation (a): a running motion in a long floral dress. 95K B-spline DOF on non-rectangular " +
-        "garment patches generated by our mesh-conforming pipeline; smooth fabric swing under large-amplitude motion.",
+      description: "A character runs in a long floral dress; the skirt swings naturally with the body.",
       image: "./static/images/character_garment.png",
       video: "./static/videos/stress-test/shuffling-v4-60.mp4"
     },
     {
       title: "Garment on Character — Hiphop Dance",
-      description:
-        "Character animation (b): arm raises and rotations in a fitted T-shirt and shorts. 65K B-spline DOF; " +
-        "deformation around the shoulders, elbows, and torso under dense contact with the body.",
+      description: "A character performs arm raises and rotations in a T-shirt and shorts; cloth deforms around the shoulders and torso.",
       image: "./static/images/character_garment.png",
       video: "./static/videos/stress-test/hiphop-v2.mp4"
     },
     {
       title: "Garment on Character — Skirt Swirl",
-      description:
-        "Character animation (c): twisting and side-stepping in a fitted top and a vertically-segmented skirt. " +
-        "124K B-spline DOF; lateral sway and rotational folds in the fabric, with stable contact across patch seams.",
+      description: "A character twists and side-steps in a fitted top and a segmented skirt; the skirt sways and folds laterally.",
       image: "./static/images/character_garment.png",
       video: "./static/videos/stress-test/dancing-v1.mp4"
     },
     {
       title: "Cloth Basket — Front View",
-      description:
-        "Four garments are launched into a B-spline basket with fixed corners, colliding with each other and the " +
-        "basket faces (also modeled as B-spline surfaces). 152K control-point garments + 191K contact mesh; IPC " +
-        "integration handles dynamic self-contact throughout.",
+      description: "Four garments are launched into a basket and pile inside, colliding with each other and the basket walls.",
       image: "./static/images/cloth_basket.png",
       video: "./static/videos/stress-test/cloth_basket_front_v2.mp4"
     },
     {
       title: "Cloth Basket — Top View",
-      description:
-        "Same cloth-basket scene from above, showing the in-plane folding pattern as garments accumulate inside the " +
-        "basket and fabric layers fold against each other.",
+      description: "The same scene from above, showing the layered folding pattern as garments settle into the basket.",
       image: "./static/images/cloth_basket.png",
       video: "./static/videos/stress-test/cloth_basket_top_v2.mp4"
     }
@@ -702,15 +704,23 @@
   function buildFbwCell(cell) {
     if (!cell) return `<td><span class="cell-empty">—</span></td>`;
     const src = FBW_VIDEO_BASE + cell.file;
-    // `scale` (optional, see comment above fbwTests) applies a CSS transform so
-    // a render with extra padding visually matches its neighbors. The wrap's
-    // overflow:hidden clips the spillover back to the original cell width.
-    const scaleStyle = cell.scale
-      ? ` style="transform: scale(${cell.scale}); transform-origin: center;"`
+    // `scale` and `translateY` (both optional, see comment above fbwTests)
+    // are composed into a single CSS transform so a render with extra padding
+    // can be both zoomed and shifted. The wrap's overflow:hidden clips the
+    // result back to the original cell box.
+    const transforms = [];
+    if (cell.translateY) transforms.push(`translateY(${cell.translateY})`);
+    if (cell.scale)      transforms.push(`scale(${cell.scale})`);
+    const scaleStyle = transforms.length
+      ? ` style="transform: ${transforms.join(" ")}; transform-origin: center;"`
+      : "";
+    const timeLine = cell.time
+      ? `<span class="cell-time-label">${cell.time}</span>`
       : "";
     return `
       <td>
         <span class="cell-res-label">${cell.res}</span>
+        ${timeLine}
         <div class="cell-video-wrap">
           <video class="cell-video" muted autoplay playsinline preload="metadata"${scaleStyle}>
             <source src="${src}" type="video/mp4">
