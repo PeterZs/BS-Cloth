@@ -157,9 +157,11 @@
     }
     .comparison-table .cell-video {
       width: 100%;
+      height: 100%;
       display: block;
-      background: #000;
-      cursor: pointer;   /* hints click-to-replay (handler in JS) */
+      background: #ffffff;     /* matches the wrap so letterboxed bands blend in */
+      object-fit: contain;     /* preserve native aspect inside the fixed wrap; off-aspect cells get white bands */
+      cursor: pointer;         /* hints click-to-replay (handler in JS) */
     }
     /* Wraps the cell video so per-cell `transform: scale(...)` clips inside the
        wrap rather than spilling into neighboring cells. To bump or shrink one
@@ -172,7 +174,9 @@
     .cell-video-wrap {
       overflow: hidden;
       border-radius: 8px;
+      width: 100%;
       max-width: 220px;
+      aspect-ratio: 1 / 1;     /* fixed square box; off-aspect videos letterbox against the white background below so all rows align */
       margin: 0 auto;
       background: #ffffff;
     }

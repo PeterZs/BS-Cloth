@@ -68,8 +68,6 @@ Test assets live under `B-Spline-IPC/models/` and `B-Spline-IPC/seam/`. Configs 
 
 Most third-party libraries are vendored under `B-Spline-IPC/ext/` (Eigen, spdlog, fkyaml, stb, oneAPI headers, IPC sources, …); on Windows, prebuilt binaries for SuiteSparse, LAPACK/OpenBLAS, and TBB are also shipped under `B-Spline-IPC/lib/` with their runtime DLLs in `B-Spline-IPC/dll/`. The remaining dependencies must be installed by the user.
 
-### Required (all platforms)
-
 - **C++20 toolchain** — Visual Studio 2022 (Windows), or GCC ≥ 11 / Clang ≥ 14 (Linux).
 - **[premake5](https://premake.github.io/)** (≥ 5.0.0-beta8) — generates the project / makefiles. Available pre-built from the official website.
 - **Intel oneAPI Base Toolkit** — provides MKL (used as the Pardiso direct solver and as Eigen's BLAS/LAPACK backend) together with the Intel OpenMP runtime. The build script reads two environment variables to locate them:
@@ -77,16 +75,9 @@ Most third-party libraries are vendored under `B-Spline-IPC/ext/` (Eigen, spdlog
   - `CMPLR_ROOT` — root of the Intel compiler install (e.g. `C:/Program Files (x86)/Intel/oneAPI/compiler/latest`).
 
   Pass `--no-mkl` to `premake5` to fall back to Eigen's native solver and skip MKL altogether (the env vars are then not required, at the cost of solver performance).
-
-### Windows-specific
-
 - **[Vulkan SDK](https://vulkan.lunarg.com/)** — required by the in-tree preview renderer, which is enabled by default on Windows. Not needed if you build with `BSIPC_DISABLE_RENDERER` defined.
-
-### Linux-specific
-
 - **Intel oneAPI TBB** — set `TBBROOT` to its install root so premake can find the TBB libraries.
-- **SuiteSparse** (CHOLMOD, AMD, CAMD, COLAMD, CCOLAMD, suitesparseconfig) — install via your package manager, e.g. `sudo apt install libsuitesparse-dev`.
-- The Linux build excludes the renderer entirely, so the Vulkan SDK and GLFW are *not* required.
+- **SuiteSparse** (CHOLMOD, AMD, CAMD, COLAMD, CCOLAMD, suitesparseconfig) — install via your package manager, e.g. `sudo apt install libsuitesparse-dev`. If high performance is desired, consider building from scratch and linking Intel MKL.
 
 ## Installation
 
