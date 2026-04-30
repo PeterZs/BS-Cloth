@@ -21,7 +21,7 @@ thickness: 0.00518
 timestep: 0.01
 residue_tolerance: 0.01
 ground_height: -5.0
-quad_scheme: local-edge-dense
+quad_scheme: local-chessboard
 cache_quad_points: true
 use_cached_quad_points: true
 disable_interpatch_contact: true
@@ -167,7 +167,7 @@ seams:
 #       content: [0.0, 0.0, -0.5]
 
 animated_meshes:
-  directory: Shuffling-animation-600-shrink-0_005
+  directory: Shuffling-animation
   pattern: "@"
   length: 600
   diff: 0.001

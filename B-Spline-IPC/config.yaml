@@ -27,27 +27,9 @@ use_cached_quad_points: false
 disable_interpatch_contact: true
 bs_surfaces:
 - resolution:
-    x: 34
-    y: 34
+    x: 50
+    y: 50
   linear_resolution:
-    x: 34
-    y: 34
-  fixed_nodes: [0, 33]
-#   # rest_node_file: skewed-square/skew_mesh_skew_only_30deg_sd_3x3_control
-#   transformations:
-#   -
-#     type: translation
-#     content: [-0.3, 0.3, 0.0]
-# fixed_trig_meshes:
-#   -
-#     name: stanford-bunny
-#     transformations:
-#     -
-#       type: scaling
-#       content: [2.0, 2.0, 2.0]
-#     -
-#       type: rotation
-#       content: [90.0, 0.0, 0.0]
-#     -
-#       type: translation
-#       content: [0.5, 0.5, -0.5]
+    x: 50
+    y: 50
+  fixed_nodes: [0, 49]
