@@ -2,20 +2,21 @@
 
 <div align="center">
   <p>
-    <strong>Yuqi Meng</strong><sup>1,2</sup>,
-    <strong>Yihao Shi</strong><sup>1,3</sup>,
-    <strong>Kemeng Huang</strong><sup>1,4</sup>,
-    <strong>Zixuan Lu</strong><sup>2</sup>,
-    <strong>Ning Guo</strong><sup>3</sup>,
-    <strong>Taku Komura</strong><sup>4</sup>,
-    <strong>Yin Yang</strong><sup>2</sup>,
-    <strong>Minchen Li</strong><sup>1</sup>
+    <a href="https://aressegetesstery.github.io/"><strong>Yuqi Meng</strong></a><sup>1,2</sup>,
+    <a href="https://github.com/Yihao-Shi"><strong>Yihao Shi</strong></a><sup>1,3</sup>,
+    <a href="https://kemenghuang.github.io/"><strong>Kemeng Huang</strong></a><sup>1,4</sup>,
+    <a href="https://zixuanvickylu.github.io/"><strong>Zixuan Lu</strong></a><sup>2</sup>,
+    <a href="https://person.zju.edu.cn/nguo"><strong>Ning Guo</strong></a><sup>3</sup>,
+    <a href="https://www.ai.hku.hk/people/academic-staff/taku"><strong>Taku Komura</strong></a><sup>4</sup>,
+    <a href="https://yangzzzy.github.io/"><strong>Yin Yang</strong></a><sup>2</sup>,
+    <a href="https://www.cs.cmu.edu/~minchenl/"><strong>Minchen Li</strong></a><sup>1,5</sup>
   </p>
   <p>
     <sup>1</sup>Carnegie Mellon University &nbsp;&nbsp;
     <sup>2</sup>University of Utah &nbsp;&nbsp;
     <sup>3</sup>Zhejiang University &nbsp;&nbsp;
-    <sup>4</sup>The University of Hong Kong
+    <sup>4</sup>The University of Hong Kong &nbsp;&nbsp;
+    <sup>5</sup>Genesis AI
   </p>
   <p><strong>ACM Transactions on Graphics (SIGGRAPH 2026)</strong></p>
   <p>
@@ -32,6 +33,31 @@
 ## Overview
 
 We present an efficient B-spline finite element method (FEM) for cloth simulation. The pipeline combines B-spline-specific optimizations (reduced integration with split membrane/bending quadrature, accelerated Hessian assembly) with general numerical optimizations (a partial-factorization linear solver). This codebase is a standalone simulator that implements the B-spline FEM in the paper with IPC integration for contact handling.
+
+## Citation
+
+If you find this work useful in your research, please cite our paper:
+
+> Yuqi Meng, Yihao Shi, Kemeng Huang, Zixuan Lu, Ning Guo, Taku Komura, Yin Yang, and Minchen Li. 2026. Efficient B-Spline Finite Elements for Cloth Simulation. *ACM Trans. Graph.* 45, 4, Article 102 (July 2026). https://doi.org/10.1145/3811278
+
+```bibtex
+@article{meng2026bspline,
+    author    = {Meng, Yuqi and Shi, Yihao and Huang, Kemeng and Lu, Zixuan and Guo, Ning and Komura, Taku and Yang, Yin and Li, Minchen},
+    title     = {Efficient B-Spline Finite Elements for Cloth Simulation},
+    year      = {2026},
+    issue_date = {July 2026},
+    publisher = {Association for Computing Machinery},
+    address   = {New York, NY, USA},
+    volume    = {45},
+    number    = {4},
+    issn      = {0730-0301},
+    url       = {https://doi.org/10.1145/3811278},
+    doi       = {10.1145/3811278},
+    journal   = {ACM Trans. Graph.},
+    month     = jul,
+    articleno = {102}
+}
+```
 
 ## Repository Structure
 

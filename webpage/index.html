@@ -316,6 +316,19 @@
       box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
     }
 
+    /* Shrink the hero title so the full paper name fits on one line on desktop. */
+    .publication-title {
+      font-size: 2.25rem;
+      white-space: nowrap;
+    }
+
+    @media screen and (max-width: 900px) {
+      .publication-title {
+        font-size: 1.75rem;
+        white-space: normal;
+      }
+    }
+
     @media screen and (max-width: 768px) {
       .application-grid { grid-template-columns: 1fr; }
       .demo-card { flex-basis: 100%; }
@@ -351,22 +364,23 @@
         <div class="column has-text-centered">
           <h1 class="title is-1 publication-title">Efficient B-Spline Finite Elements for Cloth Simulation</h1>
           <div class="is-size-5 publication-authors">
-            <span class="author-block">Yuqi Meng<sup>1,2</sup>,</span>
-            <span class="author-block">Yihao Shi<sup>1,3</sup>,</span>
-            <span class="author-block">Kemeng Huang<sup>1,4</sup>,</span>
-            <span class="author-block">Zixuan Lu<sup>2</sup>,</span>
+            <span class="author-block"><a href="https://aressegetesstery.github.io/" target="_blank" rel="noopener noreferrer">Yuqi Meng</a><sup>1,2</sup>,</span>
+            <span class="author-block"><a href="https://github.com/Yihao-Shi" target="_blank" rel="noopener noreferrer">Yihao Shi</a><sup>1,3</sup>,</span>
+            <span class="author-block"><a href="https://kemenghuang.github.io/" target="_blank" rel="noopener noreferrer">Kemeng Huang</a><sup>1,4</sup>,</span>
+            <span class="author-block"><a href="https://zixuanvickylu.github.io/" target="_blank" rel="noopener noreferrer">Zixuan Lu</a><sup>2</sup>,</span>
             <br>
-            <span class="author-block">Ning Guo<sup>3</sup>,</span>
-            <span class="author-block">Taku Komura<sup>4</sup>,</span>
-            <span class="author-block">Yin Yang<sup>2</sup>,</span>
-            <span class="author-block">Minchen Li<sup>1</sup></span>
+            <span class="author-block"><a href="https://person.zju.edu.cn/nguo" target="_blank" rel="noopener noreferrer">Ning Guo</a><sup>3</sup>,</span>
+            <span class="author-block"><a href="https://www.ai.hku.hk/people/academic-staff/taku" target="_blank" rel="noopener noreferrer">Taku Komura</a><sup>4</sup>,</span>
+            <span class="author-block"><a href="https://yangzzzy.github.io/" target="_blank" rel="noopener noreferrer">Yin Yang</a><sup>2</sup>,</span>
+            <span class="author-block"><a href="https://www.cs.cmu.edu/~minchenl/" target="_blank" rel="noopener noreferrer">Minchen Li</a><sup>1,5</sup></span>
           </div>
 
           <div class="is-size-6 publication-authors">
             <span class="author-block"><sup>1</sup>Carnegie Mellon University,</span>
             <span class="author-block"><sup>2</sup>University of Utah,</span>
             <span class="author-block"><sup>3</sup>Zhejiang University,</span>
-            <span class="author-block"><sup>4</sup>University of Hong Kong</span>
+            <span class="author-block"><sup>4</sup>University of Hong Kong,</span>
+            <span class="author-block"><sup>5</sup>Genesis AI</span>
           </div>
 
           <div class="is-size-5 publication-authors" style="margin-top: 0.5rem;">
@@ -401,7 +415,7 @@
                 </a>
               </span>
               <span class="link-block">
-                <a href="https://www.youtube.com/watch?v=JbDYJZRZs24" target="_blank" rel="noopener noreferrer" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #c0392b; border: 2px solid #c0392b;">
+                <a href="https://youtu.be/Mic1pfp33fI" target="_blank" rel="noopener noreferrer" class="external-link button is-normal is-rounded" style="background-color:#ffffff; color: #c0392b; border: 2px solid #c0392b;">
                   <span class="icon" style="color:#c0392b;"><i class="fab fa-youtube"></i></span>
                   <span>Video</span>
                 </a>
@@ -520,7 +534,7 @@
           A complete walkthrough of the method with all simulation results in motion — validation tests,
           square-cloth comparisons, contact-rich stress tests, and full-character garment animations.
         </p>
-        <a class="video-link-card" href="https://www.youtube.com/watch?v=JbDYJZRZs24" target="_blank" rel="noopener noreferrer"
+        <a class="video-link-card" href="https://youtu.be/Mic1pfp33fI" target="_blank" rel="noopener noreferrer"
            aria-label="Watch the supplementary video on YouTube">
           <img src="./static/images/teaser.png" alt="Supplementary video — click to watch on YouTube">
           <span class="play-overlay" aria-hidden="true">
@@ -539,14 +553,21 @@
 <section class="section" id="citation">
   <div class="container is-max-desktop content">
     <h2 class="title">BibTeX</h2>
-    <pre><code>@misc{meng2026bspline,
-      title={Efficient B-Spline Finite Elements for Cloth Simulation}, 
-      author={Yuqi Meng and Yihao Shi and Kemeng Huang and Zixuan Lu and Ning Guo and Taku Komura and Yin Yang and Minchen Li},
-      year={2026},
-      eprint={2506.18867},
-      archivePrefix={arXiv},
-      primaryClass={cs.GR},
-      url={https://arxiv.org/abs/2506.18867}, 
+    <pre><code>@article{meng2026bspline,
+    author     = {Meng, Yuqi and Shi, Yihao and Huang, Kemeng and Lu, Zixuan and Guo, Ning and Komura, Taku and Yang, Yin and Li, Minchen},
+    title      = {Efficient B-Spline Finite Elements for Cloth Simulation},
+    year       = {2026},
+    issue_date = {July 2026},
+    publisher  = {Association for Computing Machinery},
+    address    = {New York, NY, USA},
+    volume     = {45},
+    number     = {4},
+    issn       = {0730-0301},
+    url        = {https://doi.org/10.1145/3811278},
+    doi        = {10.1145/3811278},
+    journal    = {ACM Trans. Graph.},
+    month      = jul,
+    articleno  = {102}
 }</code></pre>
   </div>
 </section>
