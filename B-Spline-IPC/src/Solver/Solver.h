@@ -55,11 +55,6 @@ namespace BSIPC
 
         void FillGlobalGradient(const DMat& localGrad, BSIPC_OUT DMat& globalGrad, const std::vector<UInt> indices, tbb::mutex& mutex) const;
         
-        // Returns the assembled hessian multiplied by timestep squared
-        void FillElasticityHessTimestepSq(
-            const DMat& localHess, BSIPC_OUT SpMatData& globalHessData, const std::vector<UInt> indices, UInt quadPointIndex
-        ) const;
-
         void FillSeamHess(const DMat& localHess, BSIPC_OUT SpMatData& globalHessData, 
             const std::vector<UInt> indicesI, const std::vector<UInt> indicesJ, UInt bsOffsetI, UInt bsOffsetJ,
             UInt hessEntryOffset) const;
@@ -158,7 +153,6 @@ namespace BSIPC
 
         // Optimizations for Hessian assembly
         void InitHessCache();
-        void PrecalculateBendingHess();
         void PrecomputeKKTComponents();
         void PreAssembleElasticityHessTemplate();
 
@@ -248,10 +242,6 @@ namespace BSIPC
 
         std::vector<TriangularMesh> patchOrderMesh;
 
-        std::vector<Mat<27, 1>> localElasticityGrad;                    // Local 27 * 1 elasticity gradient
-        std::vector<Mat<27, 27>> localBendingHess;                      // Precalculate constant bending hessian for each patch
-        std::vector<Mat<27, 27>> localElasticityHess;                   // Local 27 * 27 elasticity Hessian
-
         // KKT system components [See PrecomputeKKTComponents()]
         UInt seamConstraintCnt;
         SpMat seamConstraintCoeffs;                                     // The coefficient matrix C s.t. C.x = 0
@@ -268,6 +258,52 @@ namespace BSIPC
         SpMat elasticityHess;                                           // Assembled global elasticity Hessian. Modified based on template.
         SpMat elasticityHessTemplate;                                   // Precomputed, w/ full sparsity pattern and mass matrix value; should not be modified during runtime.
 
+        // Stencil-derived sparse elasticity + inertia Hessian assembly
+        enum QuadKind : UInt { QUAD_MEMBRANE = 0, QUAD_BENDING = 1 };
+
+        struct StencilContribution
+        {
+            UInt quadKind;
+            UInt quadIdx;
+            UInt localI, localJ;
+        };
+
+        struct HessBlockPtrs
+        {
+            std::array<Float*, 9> dataPtrs;
+            std::optional<std::array<Float*, 9>> conjugatePtrs;
+        };
+
+        Float stencilTol = 1e-9;
+
+        std::vector<std::vector<UInt>> ssQuadStencilNodes;
+        std::vector<std::vector<UInt>> bdQuadStencilNodes;
+        std::vector<std::vector<UInt>> ssQuadSupport9;
+        std::vector<std::vector<UInt>> bdQuadSupport9;
+
+        std::unordered_map<uint64_t, UInt> hessBlockIdxByCtrlPtPair;
+        std::vector<std::array<UInt, 2>> ctrlPtPairByBlockIdx;
+        std::vector<std::vector<StencilContribution>> stencilsByBlockIdx;
+        UInt blockDiagonalSep = 0;
+
+        std::vector<Mat<3, 3>> fixedMassOffsetByBlock;
+        std::vector<HessBlockPtrs> dataPtrByBlockIdx;
+        std::vector<Mat<3, 3>> hessBlockByBlockIdx;
+        std::vector<Mat<3, 3>> fixMaskByBlock;
+        std::vector<Mat<3, 3>> fixValueByBlock;
+
+        std::vector<DMat> localSsHess;
+        std::vector<DMat> localBdHess;
+        SpMat elasticityInertiaHess;
+
+        void PrecomputeStencilPattern();
+        void PrecomputeHessDataPtr();
+        void ComputePerQuadPointBlockHess();
+        void AssembleControlPointPairHess();
+        void WriteHessDataPtr();
+        SpMat AssembleElasticityInertiaHess();
+        std::vector<UInt> DetermineQuadStencil(const DMat& localBlock27) const;
+
         // IPC/Collision interfaces
 
         /// The sources recorded in the following only accounts for B-spline surfaces. DoF of animation sequence is not included.
@@ -280,9 +316,6 @@ namespace BSIPC
 
         Float contactStiffness;
 
-        UInt inertiaHessEntryCnt, potHessEntryCnt;
-
-        UInt curIndexInHessCache;                                       // records which entry should be recorded next iteration
         std::vector<SpMatEntry> hessEntries;
 
         // NOTE: IPC library integrates all contact tests in one mesh, so ths number of vertices will be larger than those belonging to BS surfaces

@@ -1159,6 +1159,50 @@ namespace BSIPC
             //    BSIPC_INFO("u: {:02.2f} v: {:02.2f} w: {:04.8f}", quad.U(), quad.V(), quad.Weight());
 
             // Init bdQuadPoints
+            for (UInt j = 0; j != vMax; ++j)
+                for (UInt i = 0; i != uMax; ++i)
+                {
+                    if (!(i == 0 || i == uMax - 1 || j == 0 || j == vMax - 1)) continue;
+
+                    Vec2 ll = this->EvalAtRest(i, j),     lu = this->EvalAtRest(i, j + 1);
+                    Vec2 ul = this->EvalAtRest(i + 1, j), uu = this->EvalAtRest(i + 1, j + 1);
+
+                    Float patchArea = trigArea(ll, lu, ul) + trigArea(lu, ul, uu);
+                    Vec2 center = (ll + lu + ul + uu) / 4.0;
+                    Vec2 uv = this->ParametricCoordAtRest(center, Vec2(i + 0.5, j + 0.5));
+
+                    Mat<2, 2> pdMP  = this->PD_Material_Param(uv[0], uv[1]);
+                    Mat<2, 3> pd2MP = this->PD2_Material_Param(uv[0], uv[1]);
+                    Mat<2, 2> pdPM  = this->PD_Param_Material(uv[0], uv[1]);
+                    Mat<2, 3> pd2PM = this->PD2_Param_Material(pdPM, pdMP, pd2MP);
+
+                    this->bdQuadPoints.push_back(QuadPoint{ uv[0], uv[1], patchArea, pdPM, pd2PM, pdMP, pd2MP });
+                }
+
+            for (UInt j = 1; j != vMax; ++j)
+                for (UInt i = 1; i != uMax; ++i)
+                {
+                    Vec2 vertUV(static_cast<Float>(i), static_cast<Float>(j));
+
+                    Float dualCellWeight = 0.0;
+                    for (Int di = -1; di <= 0; ++di)
+                        for (Int dj = -1; dj <= 0; ++dj)
+                        {
+                            Int pi = static_cast<Int>(i) + di, pj = static_cast<Int>(j) + dj;
+                            if (pi < 0 || pj < 0 || pi >= static_cast<Int>(uMax) || pj >= static_cast<Int>(vMax)) continue;
+
+                            Vec2 ll = this->EvalAtRest(pi, pj),     lu = this->EvalAtRest(pi, pj + 1);
+                            Vec2 ul = this->EvalAtRest(pi + 1, pj), uu = this->EvalAtRest(pi + 1, pj + 1);
+                            dualCellWeight += (trigArea(ll, lu, ul) + trigArea(lu, ul, uu)) / 4.0;
+                        }
+
+                    Mat<2, 2> pdMP  = this->PD_Material_Param(vertUV[0], vertUV[1]);
+                    Mat<2, 3> pd2MP = this->PD2_Material_Param(vertUV[0], vertUV[1]);
+                    Mat<2, 2> pdPM  = this->PD_Param_Material(vertUV[0], vertUV[1]);
+                    Mat<2, 3> pd2PM = this->PD2_Param_Material(pdPM, pdMP, pd2MP);
+
+                    this->bdQuadPoints.push_back(QuadPoint{ vertUV[0], vertUV[1], dualCellWeight, pdPM, pd2PM, pdMP, pd2MP });
+                }
         }
         else // Local
         {
@@ -1296,53 +1340,56 @@ namespace BSIPC
         }
 
         // Init bending (1-1) quadrature points
-        UInt uMax = this->UDomainMax(), vMax = this->VDomainMax();
+        if (scheme != QuadScheme::LOCAL_DUAL_CHESSBOARD)
+        {
+            UInt uMax = this->UDomainMax(), vMax = this->VDomainMax();
 
-        UInt patchCnt = uMax * vMax;
-        this->bdQuadPoints.resize(patchCnt, QuadPoint::Zero());
+            UInt patchCnt = uMax * vMax;
+            this->bdQuadPoints.resize(patchCnt, QuadPoint::Zero());
 
-        tbb::parallel_for(
-            0, static_cast<Int>(patchCnt), 1, [&](Int iter)
-            //for (Int iter = 0; iter != static_cast<Int>(patchCnt); ++ iter)
-            {
-                UInt i = static_cast<UInt>(iter % uMax);
-                UInt j = static_cast<UInt>(iter / uMax);
-
-                Vec2 llCorner = this->EvalAtRest(i, j);
-                Vec2 luCorner = this->EvalAtRest(i, j + 1);
-                Vec2 ulCorner = this->EvalAtRest(i + 1, j);
-                Vec2 uuCorner = this->EvalAtRest(i + 1, j + 1);
-
-                Float patchArea = 0;
-                patchArea += trigArea(llCorner, luCorner, ulCorner);
-                patchArea += trigArea(luCorner, ulCorner, uuCorner);
-
-                Float curQuadWeight = patchArea;
-
-                Vec2 curQuadPoint = (llCorner + luCorner + ulCorner + uuCorner) / 4;
-                Vec2 suggestUV = Vec2(i + 0.5, j + 0.5);
-                Vec2 curQuadPointParamCoord = this->ParametricCoordAtRest(curQuadPoint, suggestUV);
-
-                //BSIPC_INFO("Quad Point: {:02.2f} v: {:02.2f} w: {:04.4f}",
-                //    curQuadPointParamCoord[0], curQuadPointParamCoord[1], curQuadWeight);
-
-                // cache derivatives
-                Mat<2, 2> pd_Material_Param = this->PD_Material_Param(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
-                Mat<2, 3> pd2_Material_Param = this->PD2_Material_Param(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
-                Mat<2, 2> pd_Param_Material = this->PD_Param_Material(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
-                Mat<2, 3> pd2_Param_Material = this->PD2_Param_Material(
-                    pd_Param_Material, pd_Material_Param, pd2_Material_Param
-                );
-
-                QuadPoint curQuad = QuadPoint
+            tbb::parallel_for(
+                0, static_cast<Int>(patchCnt), 1, [&](Int iter)
+                //for (Int iter = 0; iter != static_cast<Int>(patchCnt); ++ iter)
                 {
-                    curQuadPointParamCoord[0], curQuadPointParamCoord[1], curQuadWeight,
-                    pd_Param_Material, pd2_Param_Material, pd_Material_Param, pd2_Material_Param
-                };
+                    UInt i = static_cast<UInt>(iter % uMax);
+                    UInt j = static_cast<UInt>(iter / uMax);
 
-                this->bdQuadPoints[iter] = curQuad;
-            }
-        );
+                    Vec2 llCorner = this->EvalAtRest(i, j);
+                    Vec2 luCorner = this->EvalAtRest(i, j + 1);
+                    Vec2 ulCorner = this->EvalAtRest(i + 1, j);
+                    Vec2 uuCorner = this->EvalAtRest(i + 1, j + 1);
+
+                    Float patchArea = 0;
+                    patchArea += trigArea(llCorner, luCorner, ulCorner);
+                    patchArea += trigArea(luCorner, ulCorner, uuCorner);
+
+                    Float curQuadWeight = patchArea;
+
+                    Vec2 curQuadPoint = (llCorner + luCorner + ulCorner + uuCorner) / 4;
+                    Vec2 suggestUV = Vec2(i + 0.5, j + 0.5);
+                    Vec2 curQuadPointParamCoord = this->ParametricCoordAtRest(curQuadPoint, suggestUV);
+
+                    //BSIPC_INFO("Quad Point: {:02.2f} v: {:02.2f} w: {:04.4f}",
+                    //    curQuadPointParamCoord[0], curQuadPointParamCoord[1], curQuadWeight);
+
+                    // cache derivatives
+                    Mat<2, 2> pd_Material_Param = this->PD_Material_Param(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
+                    Mat<2, 3> pd2_Material_Param = this->PD2_Material_Param(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
+                    Mat<2, 2> pd_Param_Material = this->PD_Param_Material(curQuadPointParamCoord[0], curQuadPointParamCoord[1]);
+                    Mat<2, 3> pd2_Param_Material = this->PD2_Param_Material(
+                        pd_Param_Material, pd_Material_Param, pd2_Material_Param
+                    );
+
+                    QuadPoint curQuad = QuadPoint
+                    {
+                        curQuadPointParamCoord[0], curQuadPointParamCoord[1], curQuadWeight,
+                        pd_Param_Material, pd2_Param_Material, pd_Material_Param, pd2_Material_Param
+                    };
+
+                    this->bdQuadPoints[iter] = curQuad;
+                }
+            );
+        }
 
         //BSIPC_INFO("=================================================");
         //for (auto& quad : this->quadPoints)

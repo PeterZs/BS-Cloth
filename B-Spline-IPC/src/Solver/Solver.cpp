@@ -20,9 +20,6 @@ namespace BSIPC
         trigVertCntSum(0),
         bsVertCntSum(0),
         bsPatchCntSum(0),
-        inertiaHessEntryCnt(0),
-        potHessEntryCnt(0),
-        curIndexInHessCache(0),
         simlTime(0),
         seamConstraintCnt(0)
     {  
@@ -319,40 +316,269 @@ namespace BSIPC
         mutex.unlock();
     }
 
-    void Solver::FillElasticityHessTimestepSq(
-        const DMat& localHess, BSIPC_OUT SpMatData& globalHessData, const std::vector<UInt> indices, UInt patchIndex
-    ) const
+    std::vector<UInt> Solver::DetermineQuadStencil(const DMat& localBlock27) const
     {
-        const Float timestepSq = this->config.timestep * this->config.timestep;
-
-        for (UInt i = 0; i != indices.size(); ++i)
-            for (UInt j = 0; j != indices.size(); ++j)
-            {
-                UInt globalI = indices[i], globalJ = indices[j];
-
-                for (UInt coordI = 0; coordI != 3; ++coordI)
-                    for (UInt coordJ = 0; coordJ != 3; ++coordJ)
-                    {
-                        // rowIndex and columnIndex are inversed cf. matrix entry indices: (i, j) <-> (columnIndex, rowIndex)
-                        // row and column indices in the Hessian
-                        UInt rowIndex = 3 * globalJ + coordJ;
-                        UInt colIndex = 3 * globalI + coordI;
-
-                        Float curEntryVal = timestepSq * localHess(3 * i + coordI, 3 * j + coordJ);
-
-                        UInt inBlockIndex = (3 * i + coordI) * 27 + 3 * j + coordJ;
-                        UInt globalIndex = patchIndex * 729 + inBlockIndex;
-
-                        // Elasticity entries appear at the beginning of global Hessian, so offset = 0
-                        if (this->ShouldFixHessEntry(rowIndex, colIndex))
-                            globalHessData[globalIndex] = SpMatEntry(rowIndex, colIndex, 0);
-                        else
-                            globalHessData[globalIndex] = SpMatEntry(rowIndex, colIndex, curEntryVal);
-                    }
-            }
+        std::vector<UInt> survivors;
+        survivors.reserve(9);
+        for (UInt a = 0; a != 9; ++a)
+        {
+            Float diagNorm = localBlock27.block<3, 3>(3 * a, 3 * a).norm();
+            if (diagNorm > this->stencilTol)
+                survivors.push_back(a);
+        }
+        return survivors;
     }
 
-    void Solver::FillSeamHess(const DMat& localHess, SpMatData& globalHessData, 
+    void Solver::PrecomputeStencilPattern()
+    {
+        this->hessBlockIdxByCtrlPtPair.clear();
+        this->ctrlPtPairByBlockIdx.clear();
+        this->stencilsByBlockIdx.clear();
+        this->ssQuadStencilNodes.clear();
+        this->bdQuadStencilNodes.clear();
+        this->ssQuadSupport9.clear();
+        this->bdQuadSupport9.clear();
+
+        auto CompressKey = [](UInt i, UInt j) -> uint64_t {
+            UInt lo = std::min(i, j), hi = std::max(i, j);
+            return (static_cast<uint64_t>(lo) << 32) | static_cast<uint64_t>(hi);
+        };
+        auto GetOrCreateBlock = [&](UInt ci, UInt cj) -> UInt {
+            uint64_t key = CompressKey(ci, cj);
+            auto it = this->hessBlockIdxByCtrlPtPair.find(key);
+            if (it != this->hessBlockIdxByCtrlPtPair.end()) return it->second;
+            UInt idx = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+            this->hessBlockIdxByCtrlPtPair.emplace(key, idx);
+            this->ctrlPtPairByBlockIdx.push_back({ std::min(ci, cj), std::max(ci, cj) });
+            this->stencilsByBlockIdx.emplace_back();
+            return idx;
+        };
+        auto Register = [&](UInt ci, UInt cj, UInt kind, UInt qIdx, UInt li, UInt lj) {
+            UInt blk = GetOrCreateBlock(ci, cj);
+            bool swap = ci > cj;
+            this->stencilsByBlockIdx[blk].push_back(
+                StencilContribution{ kind, qIdx, swap ? lj : li, swap ? li : lj });
+        };
+
+        for (const BSTargetInfo& info : this->targets)
+        {
+            const BSSurface& t = *info.target;
+            UInt off = info.bsVertIndexOffset.value();
+            const std::vector<QuadPoint>& ss = t.GetSsQuadPoints();
+            for (UInt q = 0; q != ss.size(); ++q)
+            {
+                std::vector<UInt> support9 = t.SupportedNodesAt(ss[q]);
+                for (UInt& s : support9) s += off;
+                std::vector<UInt> stencil;
+                if (ss[q].U() == 0 && ss[q].V() == 0)
+                    stencil.clear();
+                else
+                {
+                    DMat block = Energy::SsHessBlockAt(ss[q], t.SupportedNodesAt(ss[q]), this->config, info.target);
+                    stencil = this->DetermineQuadStencil(block);
+                }
+                this->ssQuadSupport9.push_back(support9);
+                this->ssQuadStencilNodes.push_back(stencil);
+            }
+        }
+        for (const BSTargetInfo& info : this->targets)
+        {
+            const BSSurface& t = *info.target;
+            UInt off = info.bsVertIndexOffset.value();
+            const std::vector<QuadPoint>& bd = t.GetBdQuadPoints();
+            for (UInt q = 0; q != bd.size(); ++q)
+            {
+                std::vector<UInt> support9 = t.SupportedNodesAt(bd[q]);
+                for (UInt& s : support9) s += off;
+                DMat block = Energy::BdHessBlockAt(bd[q], t.SupportedNodesAt(bd[q]), this->config, info.target);
+                std::vector<UInt> stencil = this->DetermineQuadStencil(block);
+                this->bdQuadSupport9.push_back(support9);
+                this->bdQuadStencilNodes.push_back(stencil);
+            }
+        }
+
+        auto RegisterDiag = [&](UInt kind, const std::vector<std::vector<UInt>>& support9s,
+                                const std::vector<std::vector<UInt>>& stencils) {
+            for (UInt q = 0; q != stencils.size(); ++q)
+                for (UInt ia = 0; ia != stencils[q].size(); ++ia)
+                {
+                    UInt a = stencils[q][ia];
+                    Register(support9s[q][a], support9s[q][a], kind, q, ia, ia);
+                }
+        };
+        RegisterDiag(QUAD_MEMBRANE, this->ssQuadSupport9, this->ssQuadStencilNodes);
+        RegisterDiag(QUAD_BENDING, this->bdQuadSupport9, this->bdQuadStencilNodes);
+        this->blockDiagonalSep = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+
+        auto RegisterOffDiag = [&](UInt kind, const std::vector<std::vector<UInt>>& support9s,
+                                   const std::vector<std::vector<UInt>>& stencils) {
+            for (UInt q = 0; q != stencils.size(); ++q)
+                for (UInt ia = 0; ia != stencils[q].size(); ++ia)
+                    for (UInt ib = ia + 1; ib != stencils[q].size(); ++ib)
+                    {
+                        UInt a = stencils[q][ia], b = stencils[q][ib];
+                        Register(support9s[q][a], support9s[q][b], kind, q, ia, ib);
+                    }
+        };
+        RegisterOffDiag(QUAD_MEMBRANE, this->ssQuadSupport9, this->ssQuadStencilNodes);
+        RegisterOffDiag(QUAD_BENDING, this->bdQuadSupport9, this->bdQuadStencilNodes);
+
+        const UInt blockCnt = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+
+        this->fixedMassOffsetByBlock.assign(blockCnt, Mat<3, 3>::Zero());
+        for (UInt blk = 0; blk != this->blockDiagonalSep; ++blk)
+        {
+            UInt ci = this->ctrlPtPairByBlockIdx[blk][0];
+            if (this->ctrlPtPairByBlockIdx[blk][1] == ci)
+                this->fixedMassOffsetByBlock[blk] = Mat<3, 3>::Identity() * (this->config.thickness * this->massMatDiagEntries[ci]);
+        }
+
+        this->fixMaskByBlock.assign(blockCnt, Mat<3, 3>::Zero());
+        this->fixValueByBlock.assign(blockCnt, Mat<3, 3>::Zero());
+        for (UInt blk = 0; blk != blockCnt; ++blk)
+        {
+            UInt ci = this->ctrlPtPairByBlockIdx[blk][0], cj = this->ctrlPtPairByBlockIdx[blk][1];
+            for (UInt c = 0; c != 3; ++c)
+                for (UInt r = 0; r != 3; ++r)
+                {
+                    UInt row = 3 * ci + r, col = 3 * cj + c;
+                    if (this->ShouldFixHessEntry(row, col))
+                    {
+                        this->fixMaskByBlock[blk](r, c) = 1.0;
+                        if (ci == cj && r == c)
+                            this->fixValueByBlock[blk](r, c) = 1.0;
+                    }
+                }
+        }
+    }
+
+    void Solver::PrecomputeHessDataPtr()
+    {
+        const UInt dof = 3 * this->bsVertCntSum;
+        const UInt blockCnt = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+
+        SpMatData triplets;
+        triplets.reserve(9 * blockCnt + 9 * (blockCnt - this->blockDiagonalSep));
+        for (UInt blk = 0; blk != blockCnt; ++blk)
+        {
+            UInt ci = this->ctrlPtPairByBlockIdx[blk][0], cj = this->ctrlPtPairByBlockIdx[blk][1];
+            UInt rb = 3 * ci, cb = 3 * cj;
+            for (UInt c = 0; c != 3; ++c)
+                for (UInt r = 0; r != 3; ++r)
+                    triplets.emplace_back(static_cast<Int>(rb + r), static_cast<Int>(cb + c), 1.0);
+            if (blk >= this->blockDiagonalSep)
+                for (UInt c = 0; c != 3; ++c)
+                    for (UInt r = 0; r != 3; ++r)
+                        triplets.emplace_back(static_cast<Int>(cb + r), static_cast<Int>(rb + c), 1.0);
+        }
+        this->elasticityInertiaHess.resize(dof, dof);
+        this->elasticityInertiaHess.setFromTriplets(triplets.begin(), triplets.end());
+        this->elasticityInertiaHess.makeCompressed();
+
+        this->dataPtrByBlockIdx.assign(blockCnt, HessBlockPtrs{});
+        for (UInt blk = 0; blk != blockCnt; ++blk)
+        {
+            UInt ci = this->ctrlPtPairByBlockIdx[blk][0], cj = this->ctrlPtPairByBlockIdx[blk][1];
+            UInt rb = 3 * ci, cb = 3 * cj;
+            HessBlockPtrs& info = this->dataPtrByBlockIdx[blk];
+            for (UInt c = 0; c != 3; ++c)
+                for (UInt r = 0; r != 3; ++r)
+                    info.dataPtrs[3 * c + r] = &this->elasticityInertiaHess.coeffRef(static_cast<Int>(rb + r), static_cast<Int>(cb + c));
+            if (blk >= this->blockDiagonalSep)
+            {
+                std::array<Float*, 9> conj;
+                for (UInt c = 0; c != 3; ++c)
+                    for (UInt r = 0; r != 3; ++r)
+                        conj[3 * c + r] = &this->elasticityInertiaHess.coeffRef(static_cast<Int>(cb + c), static_cast<Int>(rb + r));
+                info.conjugatePtrs = conj;
+            }
+        }
+    }
+
+    void Solver::ComputePerQuadPointBlockHess()
+    {
+        const Float dt2 = this->config.timestep * this->config.timestep;
+        this->localSsHess.resize(this->ssQuadStencilNodes.size());
+        UInt ssGlobal = 0;
+        for (const BSTargetInfo& info : this->targets)
+        {
+            const BSSurface& t = *info.target;
+            const std::vector<QuadPoint>& ss = t.GetSsQuadPoints();
+            tbb::parallel_for(0, static_cast<Int>(ss.size()), 1, [&](Int q)
+            {
+                UInt g = ssGlobal + static_cast<UInt>(q);
+                const std::vector<UInt>& stencil = this->ssQuadStencilNodes[g];
+                const UInt k = static_cast<UInt>(stencil.size());
+                if (k == 0)
+                {
+                    this->localSsHess[g] = DMat();
+                    return;
+                }
+                std::vector<UInt> support9 = t.SupportedNodesAt(ss[q]);
+                Mat<27, 27> full = ss[q].Weight() * Energy::SsHessBlockAt(ss[q], support9, this->config, info.target);
+                full *= dt2;
+                DMat reduced(3 * k, 3 * k);
+                for (UInt a = 0; a != k; ++a)
+                    for (UInt b = 0; b != k; ++b)
+                        reduced.block<3, 3>(3 * a, 3 * b) = full.block<3, 3>(3 * stencil[a], 3 * stencil[b]);
+                this->localSsHess[g] = reduced;
+            });
+            ssGlobal += static_cast<UInt>(ss.size());
+        }
+    }
+
+    void Solver::AssembleControlPointPairHess()
+    {
+        const UInt blockCnt = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+        this->hessBlockByBlockIdx.resize(blockCnt);
+        tbb::parallel_for(0, static_cast<Int>(blockCnt), 1, [&](Int blk)
+        {
+            Mat<3, 3> acc = this->fixedMassOffsetByBlock[blk];
+            for (const StencilContribution& c : this->stencilsByBlockIdx[blk])
+            {
+                const DMat& src = (c.quadKind == QUAD_MEMBRANE) ? this->localSsHess[c.quadIdx]
+                                                                : this->localBdHess[c.quadIdx];
+                acc += src.block<3, 3>(3 * c.localI, 3 * c.localJ);
+            }
+            const Mat<3, 3>& mask = this->fixMaskByBlock[blk];
+            const Mat<3, 3>& fixVal = this->fixValueByBlock[blk];
+            for (UInt c2 = 0; c2 != 3; ++c2)
+                for (UInt r2 = 0; r2 != 3; ++r2)
+                    if (mask(r2, c2) != 0.0)
+                        acc(r2, c2) = fixVal(r2, c2);
+            this->hessBlockByBlockIdx[blk] = acc;
+        });
+    }
+
+    void Solver::WriteHessDataPtr()
+    {
+        const UInt blockCnt = static_cast<UInt>(this->ctrlPtPairByBlockIdx.size());
+        tbb::parallel_for(0, static_cast<Int>(blockCnt), 1, [&](Int blk)
+        {
+            const Mat<3, 3>& b = this->hessBlockByBlockIdx[blk];
+            const HessBlockPtrs& info = this->dataPtrByBlockIdx[blk];
+            for (UInt c = 0; c != 3; ++c)
+                for (UInt r = 0; r != 3; ++r)
+                    *info.dataPtrs[3 * c + r] = b(r, c);
+            if (info.conjugatePtrs.has_value())
+            {
+                const std::array<Float*, 9>& cp = *info.conjugatePtrs;
+                for (UInt c = 0; c != 3; ++c)
+                    for (UInt r = 0; r != 3; ++r)
+                        *cp[3 * c + r] = b(r, c);
+            }
+        });
+    }
+
+    SpMat Solver::AssembleElasticityInertiaHess()
+    {
+        this->ComputePerQuadPointBlockHess();
+        this->AssembleControlPointPairHess();
+        this->WriteHessDataPtr();
+        return this->elasticityInertiaHess;
+    }
+
+    void Solver::FillSeamHess(const DMat& localHess, SpMatData& globalHessData,
         const std::vector<UInt> localIndicesI, const std::vector<UInt> localIndicesJ, UInt bsOffsetI, UInt bsOffsetJ, 
         UInt hessEntryOffset) const
     {
@@ -722,7 +948,7 @@ namespace BSIPC
                     Mat<27, 1> patchBlockGrad = Mat<27, 1>::Zero();
 
                     const QuadPoint& startQuadPoint = curSsQuadPoints[patchQuadStartIndex];
-                    std::vector<UInt> localIndices = info.target->SupportedNodesAt(info.target->GetBdQuadPoints()[idx]);
+                    std::vector<UInt> localIndices = info.target->SupportedNodesAt(startQuadPoint);
 
                     std::vector<UInt> globalIndices(localIndices.size());
                     for (UInt i = 0; i != localIndices.size(); ++i)
@@ -743,16 +969,25 @@ namespace BSIPC
                         patchBlockGrad += ssBlockGrad;
                     }
 
-                    // bending gradient
-                    const QuadPoint& curBdQuadPoint = info.target->GetBdQuadPoints()[idx];
-                    {
-                        Float weight = curBdQuadPoint.Weight();
-                        Mat<27, 1> bdBlockGrad = weight * Energy::BdGradBlockAt(curBdQuadPoint, localIndices, this->config, info.target);
-                        patchBlockGrad += bdBlockGrad;
-                    }
-
-                    this->localElasticityGrad[surfPatchStartIndex + idx] = patchBlockGrad;
                     this->FillGlobalGradient(patchBlockGrad, localElasticityGrad, globalIndices, mutex);
+                }
+            );
+
+            const std::vector<QuadPoint>& curBdQuadPoints = info.target->GetBdQuadPoints();
+            tbb::parallel_for(
+                0, static_cast<Int>(curBdQuadPoints.size()), 1, [&](Int idx)
+                {
+                    const QuadPoint& curBdQuadPoint = curBdQuadPoints[idx];
+
+                    std::vector<UInt> localIndices = info.target->SupportedNodesAt(curBdQuadPoint);
+                    std::vector<UInt> globalIndices(localIndices.size());
+                    for (UInt i = 0; i != localIndices.size(); ++i)
+                        globalIndices[i] = localIndices[i] + curOffset;
+
+                    Float weight = curBdQuadPoint.Weight();
+                    Mat<27, 1> bdBlockGrad = weight * Energy::BdGradBlockAt(curBdQuadPoint, localIndices, this->config, info.target);
+
+                    this->FillGlobalGradient(bdBlockGrad, localElasticityGrad, globalIndices, mutex);
                 }
             );
 
@@ -876,269 +1111,41 @@ namespace BSIPC
         //this->_ContactBarrierHessTriplet(contactBarrierHess);
         //BSIPC_PROFILE_END("Barrier Hess Conversion Triplet");
 
-        BSIPC_PROFILE_START("Hess Prep");
-
         // No need to take into consideration the gravity term as its Hessian is zero
-        UInt size = this->bsVertCntSum;
-
-        UInt trigMeshVertCnt = 0, quadPointsCnt = 0, patchCnt = 0;
-        for (const BSTargetInfo& info : this->targets)
-        {
-            quadPointsCnt += info.target->GetSsQuadPoints().size();
-            trigMeshVertCnt += info.trigVertCnt.value();
-            patchCnt += info.target->UDomainMax() * info.target->VDomainMax();
-        }
-
-        UInt seamPointPairCnt = 0;
-        for (const SeamInfo& info : this->config.seamInfos)
-            seamPointPairCnt += info.seamPoints.size();
-
-        BSIPC_PROFILE_START("Hess Data Allocation");
-
-        // Layout:
-        //  Potential Energy Hessian | Inertia Hessian | Seam Penalty Hessian
-
-        UInt hessEntryCnt = this->inertiaHessEntryCnt + this->potHessEntryCnt;
-        if (this->includeAnimatedMeshInSystem)
-            hessEntryCnt += 3 * this->animatedMeshCache.value().vertCnt;
-
-        this->hessEntries.resize(hessEntryCnt);
-
-        tbb::parallel_for(
-            0, static_cast<Int>(this->hessEntries.size()), 1, [&](Int i)
-            {
-                this->hessEntries[i] = SpMatEntry(0, 0, 0);
-            }
-        );
-
-        BSIPC_PROFILE_END("Hess Data Allocation");
-
-        BSIPC_PROFILE_END("Hess Prep");
-
         BSIPC_PROFILE_START("Elasticity Hessian Blocks");
-
-        UInt quadPtStartIndex = 0;
-        UInt surfPatchStartIndex = 0;
-
-        for (const BSTargetInfo& info : this->targets)
-        {
-            const BSSurface& target = *info.target;
-            const std::vector<QuadPoint>& curSsQuadPoints = target.GetSsQuadPoints();
-
-            UInt curOffset = info.bsVertIndexOffset.value();
-            const Float timestepSq = this->config.timestep * this->config.timestep;
-            UInt patchSize = target.GetPatchCnt();
-
-#if defined BSIPC_NUMERIC_TEST
-            //for (UInt i = 0; i != curQuadPoints.size(); ++i)
-            //{
-            //    const QuadPoint& curQuadPoint = info.target->GetQuadPoints()[i];
-
-            //    Float weight = curQuadPoint.Weight();
-
-            //    std::vector<UInt> localIndices = info.target->SupportedNotesAt(curQuadPoint);
-            //    DMat ssBlockHess = weight * Energy::SsHessBlockAt(curQuadPoint, localIndices, this->config, info.target);
-            //    DMat bdBlockHess = weight * Energy::BdHessBlockAt(curQuadPoint, localIndices, this->config, info.target);
-
-            //    this->SsHessBlockNumericTest(curQuadPoint, localIndices, Energy::SsHessBlockAt(curQuadPoint, localIndices, this->config, info.target), info);
-
-            //    DMat localBlockHess = ssBlockHess + bdBlockHess;
-            //    //DMat localBlockHess = bdBlockHess;
-
-            //    UInt curOffset = info.bsVertIndexOffset.value();
-
-            //    std::vector<UInt> globalIndices(localIndices.size());
-            //    for (UInt idx = 0; idx != localIndices.size(); ++idx)
-            //        globalIndices[idx] = localIndices[idx] + curOffset;
-
-            //    FillElasticityHessTimestepSq(localBlockHess, hessData, 0, globalIndices, i, info);
-            //    //FillElasticityHessTimestepSq(bdBlockHess, bdData, 0, indices, i);
-            //}
-#endif
-            const std::vector<UInt>& patchStartIndices = target.GetPatchStartIndices();
-            BSIPC_ASSERT(
-                patchSize == patchStartIndices.size(), "Size of [patchStartIndices] should match the number of patches"
-            );
-
-            BSIPC_PEEK(curSsQuadPoints.size());
-
-            tbb::parallel_for(
-                0, static_cast<Int>(patchSize), 1, [&](Int idx)
-                //for (Int idx = 0; idx != patchSize; ++idx)
-                {
-                    UInt patchQuadStartIndex = patchStartIndices[idx];
-
-                    UInt patchQuadCnt = 0;
-                    if (idx == patchStartIndices.size() - 1)
-                        patchQuadCnt = target.GetSsQuadPoints().size() - patchQuadStartIndex;
-                    else
-                        patchQuadCnt = patchStartIndices[idx + 1] - patchQuadStartIndex;
-
-                    Mat<27, 27> patchBlockHess = Mat<27, 27>::Zero();
-
-                    const QuadPoint& startQuadPoint = curSsQuadPoints[patchQuadStartIndex];
-                    std::vector<UInt> localIndices = info.target->SupportedNodesAt(info.target->GetBdQuadPoints()[idx]);
-
-                    std::vector<UInt> globalIndices(localIndices.size());
-                    for (UInt i = 0; i != localIndices.size(); ++i)
-                        globalIndices[i] = localIndices[i] + curOffset;
-
-                    for (UInt i = 0; i != patchQuadCnt; ++i)
-                    {
-                        const QuadPoint& curSsQuadPoint = curSsQuadPoints[patchQuadStartIndex + i];
-
-                        if (curSsQuadPoint.U() == 0 && curSsQuadPoint.V() == 0)
-                            continue;
-
-                        Float weight = curSsQuadPoint.Weight();
-
-                        Mat<27, 27> ssBlockHess = weight * Energy::SsHessBlockAt(curSsQuadPoint, localIndices, this->config, info.target);
-                        //Mat<27, 27> ssBlockHess = weight * Energy::StVKSsHessBlockAt(curSsQuadPoint, localIndices, this->config, info.target);
-                        patchBlockHess += ssBlockHess;
-                    }
-                    patchBlockHess += this->localBendingHess[surfPatchStartIndex + idx];
-                    this->localElasticityHess[surfPatchStartIndex + idx] = patchBlockHess;
-
-                    FillElasticityHessTimestepSq(patchBlockHess, this->hessEntries, globalIndices, surfPatchStartIndex + idx);
-                }
-            );
-
-            quadPtStartIndex += curSsQuadPoints.size();
-            surfPatchStartIndex += patchSize;
-        }
-
+        SpMat elasInertia = this->AssembleElasticityInertiaHess();
         BSIPC_PROFILE_END("Elasticity Hessian Blocks");
 
-        BSIPC_PROFILE_SCOPE(
-            "Inertia Hess",
-            Energy::FillInertiaHess(this->hessEntries, potHessEntryCnt, this->massMatDiagEntries, this->config, *this);
-        )
-
-#if defined BSIPC_NUMERIC_TEST
-        //DMat numericalSeamHess = Energy::NumericalSeamHess(this->config, this->targets);
-        //SpMat seamHessMat(3 * size, 3 * size);
-        //seamHessMat.setFromTriplets(seamHessData.begin(), seamHessData.end());
-        //DMat seamHessD = SparseToDense(seamHessMat);
-        //DMat diff = seamHessD - numericalSeamHess;
-
-        //this->AppendToLog("===== Seam Hessian Test (Assembled) =====\n\n");
-        //this->AppendToLog("Analytic Seam Hessian: \n" + ToStr(seamHessD) + "\n");
-        //this->AppendToLog("Numerical Seam Hessian: \n" + ToStr(numericalSeamHess) + "\n");
-        //this->AppendToLog("Diff: \n" + ToStr(diff) + "\n");
-        //this->AppendToLog(fmt::format("diff.norm_inf = {}", diff.lpNorm<Eigen::Infinity>()));
-        //this->AppendToLog("\n<<<<< End Test >>>>>\n");
-#endif
-
-        BSIPC_PEEK(this->hessEntries.size());
-        Float dt = this->config.timestep;
-
-        /////// TEST /////
-
-        //UInt elasInertiaHessSize = 3 * size;
-        //SpMat testHess(elasInertiaHessSize, elasInertiaHessSize);
-        ////testHess.setFromTriplets(this->hessEntries.begin(), this->hessEntries.begin() + this->inertiaHessEntryCnt + this->potHessEntryCnt);
-        //testHess.setFromTriplets(this->hessEntries.begin(), this->hessEntries.begin() + this->inertiaHessEntryCnt);
-        //testHess.makeCompressed();
-
-        //this->elasticityHess.resize(this->elasticityHessTemplate.rows(), this->elasticityHessTemplate.cols());
-        //this->elasticityHess.reserve(this->elasticityHessTemplate.nonZeros());
-        //std::memcpy(this->elasticityHess.valuePtr(), this->elasticityHessTemplate.valuePtr(), this->elasticityHessTemplate.nonZeros() * sizeof(Float));
-        //std::memcpy(this->elasticityHess.innerIndexPtr(), this->elasticityHessTemplate.innerIndexPtr(), this->elasticityHessTemplate.nonZeros() * sizeof(UInt));
-        //std::memcpy(this->elasticityHess.outerIndexPtr(), this->elasticityHessTemplate.outerIndexPtr(), (this->elasticityHessTemplate.outerSize() + 1) * sizeof(UInt));
-        //this->elasticityHess.resizeNonZeros(this->elasticityHessTemplate.nonZeros());
-        //this->elasticityHess.makeCompressed();
-
-        ////tbb::parallel_for(
-        ////    0, static_cast<Int>(this->elasticityHess.nonZeros()), 1, [&](Int i)
-        ////    {
-        ////        for (const ElasticityHessEntrySource& source : this->elasticityHessSources[i])
-        ////        {
-        ////            this->elasticityHess.valuePtr()[i] += dt * dt * this->localElasticityHess[source.globalPatchIdx](source.rowIdx, source.colIdx);
-        ////        }
-        ////    }
-        ////);
-
-        //// get the maximum entry in testHess
-        //Float maxTestEntry = 0.;
-        //for (Int k = 0; k != testHess.outerSize(); ++k)
-        //    for (SpMat::InnerIterator it(testHess, k); it; ++it)
-        //        maxTestEntry = std::max(maxTestEntry, std::abs(it.value()));
-
-        //Float maxElasticityEntry = 0.;
-        //for (Int k = 0; k != this->elasticityHess.outerSize(); ++k)
-        //    for (SpMat::InnerIterator it(this->elasticityHess, k); it; ++it)
-        //        maxElasticityEntry = std::max(maxElasticityEntry, std::abs(it.value()));
-
-        //BSIPC_INFO("testHess: {}x{}, this->elasticityHess: {}x{}", testHess.rows(), testHess.cols(), this->elasticityHess.rows(), this->elasticityHess.cols());
-        //SpMat diff = testHess - this->elasticityHess;
-
-        //this->AppendToLog("gt: \n");
-        //this->AppendToLog(ToStr(SparseToDense(testHess)));
-        //this->AppendToLog("new assemble: \n");
-        //this->AppendToLog(ToStr(this->elasticityHessTemplate));
-        ////this->AppendToLog(ToStr(SparseToDense(this->elasticityHess)));
-
-        //Float maxEntry = 0.;
-        //for (Int k = 0; k != diff.outerSize(); ++k)
-        //    for (SpMat::InnerIterator it(diff, k); it; ++it)
-        //        maxEntry = std::max(maxEntry, std::abs(it.value()));
-        //BSIPC_WARN("max entry diff: {} // max gt entry: {} // max test entry: {}", maxEntry, maxTestEntry, maxElasticityEntry);
-
-        /////// END TEST /////
-
+        SpMat IPHessMat;
         if (this->includeAnimatedMeshInSystem)
         {
-            size += this->animatedMeshCache.value().vertCnt;
+            const UInt animVertCnt = this->animatedMeshCache.value().vertCnt;
+            const UInt fullSize = 3 * (this->bsVertCntSum + animVertCnt);
 
-            //UInt hessOffset = this->inertiaHessEntryCnt + this->potHessEntryCnt + barrierHessEntryCnt + seamHessEntryCnt;
-            UInt hessOffset = this->inertiaHessEntryCnt + this->potHessEntryCnt;
-            
-            tbb::parallel_for(
-                0, static_cast<Int>(3 * this->animatedMeshCache.value().vertCnt), 1, [&](Int i)
-                {
-                    this->hessEntries[hessOffset + i] = SpMatEntry(3 * this->bsVertCntSum + i, 3 * this->bsVertCntSum + i,
-                        this->config.animatedMeshInfo.value().stiffness);
-                }
-            );
+            SpMatData triplets;
+            triplets.reserve(static_cast<size_t>(elasInertia.nonZeros()) + 3 * animVertCnt);
+            for (Int k = 0; k != elasInertia.outerSize(); ++k)
+                for (SpMat::InnerIterator it(elasInertia, k); it; ++it)
+                    triplets.emplace_back(static_cast<Int>(it.row()), static_cast<Int>(it.col()), it.value());
+
+            const Float animStiffness = this->config.animatedMeshInfo.value().stiffness;
+            const Int animBase = static_cast<Int>(3 * this->bsVertCntSum);
+            for (UInt i = 0; i != 3 * animVertCnt; ++i)
+                triplets.emplace_back(animBase + static_cast<Int>(i), animBase + static_cast<Int>(i), animStiffness);
+
+            IPHessMat.resize(static_cast<Int>(fullSize), static_cast<Int>(fullSize));
+            IPHessMat.setFromTriplets(triplets.begin(), triplets.end());
+        }
+        else
+        {
+            IPHessMat = elasInertia;
         }
 
-        BSIPC_PROFILE_SCOPE(
-            "Hess Assembly",
-            UInt hessSize = 3 * size;
-            SpMat IPHess(hessSize, hessSize);
-            IPHess.setFromTriplets(this->hessEntries.begin(), this->hessEntries.end());
-        );
-
-        // Test Hessian composition
-#if defined BSIPC_NUMERIC_TEST
-        // {TEST} when testing, remove the SPD projection in bending hessian computing
-        //this->BdHessNumericTest(bdData);
-#endif
-
-#if defined BSIPC_NUMERIC_TEST
-        //DMat numericalIPHess = this->NumericalIPHess(hypPos, estPos);
-
-        //DMat IPHess_D = SparseToDense(IPHess);
-
-        //DMat diff = IPHess_D - numericalIPHess;
-
-        //for (UInt i = 0; i != diff.cols(); ++i)
-        //    for (UInt j = 0; j != diff.cols(); ++j)
-        //        if (std::abs(diff(i, j)) < 1e-5)
-        //            diff(i, j) = 0;
-
-        //this->AppendToLog("===== IPHess Test =====\n\n");
-        //this->AppendToLog("Analytic IPGrad: \n" + ToStr(IPHess_D) + "\n");
-        //this->AppendToLog("Numerical IPGrad: \n" + ToStr(numericalIPHess) + "\n");
-        //this->AppendToLog("diff: \n" + ToStr(diff) + "\n");
-        //this->AppendToLog("\n<<<<< End Test >>>>>\n");
-#endif
-
         BSIPC_PROFILE_START("Sum all parts of Hess");
-        IPHess = IPHess + contactBarrierHess;
+        IPHessMat = IPHessMat + contactBarrierHess;
         BSIPC_PROFILE_END("Sum all parts of Hess");
 
-        return IPHess;
+        return IPHessMat;
     }
 
     void Solver::_ContactBarrierHess(SpMat& hess)
@@ -2758,9 +2765,6 @@ namespace BSIPC
             bsPatchIndexOffset += info.target->GetPatchCnt();
         }
 
-        this->localElasticityGrad.resize(this->bsPatchCntSum, Mat<27, 1>::Zero());
-        this->localElasticityHess.resize(this->bsPatchCntSum, Mat<27, 27>::Zero());
-
         // Prepare the quadrature points, and material space related derivatives
         BSIPC_INFO("Start Initing Quadrature Points");
         for (UInt i = 0; i != this->targets.size(); ++i)
@@ -2827,7 +2831,33 @@ namespace BSIPC
         this->InitMesh();
         this->InitHessCache();
         this->NormalizeSeamCoordinates();
-        this->PrecalculateBendingHess();
+        this->PrecomputeStencilPattern();
+        {
+            const Float dt2 = this->config.timestep * this->config.timestep;
+            this->localBdHess.resize(this->bdQuadStencilNodes.size());
+            UInt bdGlobal = 0;
+            for (const BSTargetInfo& info : this->targets)
+            {
+                const BSSurface& t = *info.target;
+                const std::vector<QuadPoint>& bd = t.GetBdQuadPoints();
+                for (UInt q = 0; q != bd.size(); ++q)
+                {
+                    UInt g = bdGlobal + q;
+                    const std::vector<UInt>& stencil = this->bdQuadStencilNodes[g];
+                    Mat<27, 27> full = bd[q].Weight() * Energy::BdHessBlockAt(bd[q], t.SupportedNodesAt(bd[q]), this->config, info.target);
+                    full *= dt2;
+                    const UInt k = static_cast<UInt>(stencil.size());
+                    DMat reduced(3 * k, 3 * k);
+                    for (UInt a = 0; a != k; ++a)
+                        for (UInt b = 0; b != k; ++b)
+                            reduced.block<3, 3>(3 * a, 3 * b) = full.block<3, 3>(3 * stencil[a], 3 * stencil[b]);
+                    this->localBdHess[g] = reduced;
+                }
+                bdGlobal += static_cast<UInt>(bd.size());
+            }
+        }
+        this->PrecomputeHessDataPtr();
+
         //this->FilterSeamContacts();
         this->PrecomputeKKTComponents();
         //this->PreAssembleElasticityHessTemplate();
@@ -4004,54 +4034,6 @@ namespace BSIPC
 
     void Solver::InitHessCache()
     {
-        // Layout:
-        //  Potential Energy Hessian | Inertia Hessian | Env Barrier Hessian | Seam Penalty Hessian
-
-        UInt size = this->bsVertCntSum;
-
-        UInt patchCnt = 0;
-        for (const BSTargetInfo& info : this->targets)
-            patchCnt += info.target->UDomainMax() * info.target->VDomainMax();
-
-        // Hessian only consists of diagonal entries of the mass matrix. Mass matrix has size 3 * size == ControlPointCnt
-        const UInt inertiaHessEntryCnt = 3 * size;
-
-        // Flatten the local Hessians. Every hessian has 3-by-3 support, resulting in a 27-by-27 block
-        // TODO check whether this size can be further reduced, by analyzing the structure of the Hessian
-        const UInt potHessEntryCnt = 729 * patchCnt;
-        //const UInt potHessEntryCnt = patchCnt * 15 * 2 * 9;
-
-        this->curIndexInHessCache = 0;
-
-        this->inertiaHessEntryCnt = inertiaHessEntryCnt;
-        this->potHessEntryCnt = potHessEntryCnt;
-        UInt membraneHessEntryCnt = potHessEntryCnt + inertiaHessEntryCnt;
-        this->hessEntries.resize(membraneHessEntryCnt);
-    }
-
-    void Solver::PrecalculateBendingHess()
-    {
-        this->localBendingHess.resize(this->bsPatchCntSum);
-
-        for (UInt idx = 0; idx != this->targets.size(); ++idx)
-        {
-            UInt bsPatchOffset = this->targets[idx].bsPatchIndexOffset.value();
-            BSSurface* target = this->targets[idx].target;
-
-            UInt patchCnt = target->GetPatchCnt();
-
-            tbb::parallel_for(
-                0, static_cast<Int>(patchCnt), 1, [&](Int idx)
-                {
-                    const QuadPoint& curBdQuadPoint = target->GetBdQuadPoints()[idx];
-                    Float weight = curBdQuadPoint.Weight();
-                    std::vector<UInt> localIndices = target->SupportedNodesAt(curBdQuadPoint);
-                    Mat<27, 27> bdBlockHess = weight * Energy::BdHessBlockAt(curBdQuadPoint, localIndices, this->config, target);
-
-                    this->localBendingHess[bsPatchOffset + idx] = bdBlockHess;
-                }
-            );
-        }
     }
 
     void Solver::PrecomputeKKTComponents()
